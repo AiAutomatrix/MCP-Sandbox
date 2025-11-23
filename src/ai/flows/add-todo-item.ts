@@ -27,7 +27,7 @@ const AddTodoItemOutputSchema = z.object({
 });
 export type AddTodoItemOutput = z.infer<typeof AddTodoItemOutputSchema>;
 
-async function addTodoItem(input: AddTodoItemInput): Promise<AddTodoItemOutput> {
+export async function addTodoItem(input: AddTodoItemInput): Promise<AddTodoItemOutput> {
   return addTodoItemFlow(input);
 }
 
@@ -101,5 +101,3 @@ const addTodoItemFlow = ai.defineFlow(
     return output!;
   }
 );
-
-export {addTodoItem, addTodoItemInput, addTodoItemOutput};
