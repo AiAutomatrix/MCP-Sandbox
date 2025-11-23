@@ -33,7 +33,7 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
   const db = useFirestore();
   const logsQuery = useMemoFirebase(() => {
     if (!userId || !sessionId) return null;
-    return query(collection(db, "users", userId, "sessions", sessionId, "agent_logs"), orderBy("timestamp", "desc"));
+    return query(collection(db, "users", userId, "sessions", sessionId, "steps"), orderBy("timestamp", "desc"));
   }, [db, userId, sessionId]);
 
   const {
@@ -92,7 +92,7 @@ export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, us
   const db = useFirestore();
   const factsQuery = useMemoFirebase(() => {
     if (!userId || !sessionId) return null;
-    return query(collection(db, "users", userId, "sessions", sessionId, "agent_memory"), orderBy("createdAt", "desc"));
+    return query(collection(db, "users", userId, "sessions", sessionId, "facts"), orderBy("createdAt", "desc"));
   }, [db, userId, sessionId]);
 
   const {
