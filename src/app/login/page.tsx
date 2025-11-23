@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -10,7 +11,7 @@ import {
   signInWithPopup,
   User,
 } from 'firebase/auth';
-import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, runTransaction, serverTimestamp, collection } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -57,7 +58,7 @@ const ensureUserDocument = async (db: any, user: User) => {
           userId: user.uid,
         });
 
-        // 3. Create initial empty subcollections for the session
+        // 3. Create initial empty subcollections with placeholder documents for the session
         const initialStepRef = doc(collection(db, 'users', user.uid, 'sessions', newSessionId, 'steps'), 'initial');
         transaction.set(initialStepRef, {
             createdAt: serverTimestamp(),
@@ -85,6 +86,7 @@ const ensureUserDocument = async (db: any, user: User) => {
     throw new Error("Failed to initialize your user profile. Please try again.");
   }
 };
+
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
@@ -252,5 +254,3 @@ export default function AuthPage() {
     </div>
   );
 }
-
-    
