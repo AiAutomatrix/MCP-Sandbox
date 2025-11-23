@@ -107,6 +107,17 @@ service cloud.firestore {
       allow update: if isExistingOwner(userId);
       allow delete: if isExistingOwner(userId);
     }
+    
+    /**
+     * @description Rules for Chat Messages within a user's session.
+     * @path /users/{userId}/sessions/{sessionId}/messages/{messageId}
+     * @allow A signed-in user can read and write messages in their own session.
+     * @principle Enforces ownership for chat messages, keeping conversations private.
+     */
+    match /users/{userId}/sessions/{sessionId}/messages/{messageId} {
+      // READ/WRITE: Allow owner to read and write messages within their own sessions.
+      allow read, write: if isOwner(userId);
+    }
 
     /**
      * @description Rules for Agent Log Steps, which are detailed logs within a user's session.
