@@ -53,6 +53,26 @@ service cloud.firestore {
     }
 
     /**
+     * @description Rules for a user's own document in the 'users' collection.
+     * @path /users/{userId}
+     * @allow A signed-in user (auth.uid='user_abc') can create their own document at `/users/user_abc`.
+     * @deny A user (auth.uid='user_abc') is denied from getting another user's document at `/users/user_xyz`.
+     * @principle Establishes the foundation of the user-ownership model by securing the root user document.
+     */
+    match /users/{userId} {
+      // READ: Allow owner to read their own user document.
+      allow get: if isOwner(userId);
+
+      // WRITE: Allow owner to create, update, and delete their own document.
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+
+      // DENY: Explicitly deny listing all users.
+      allow list: if false;
+    }
+
+    /**
      * @description Rules for a user's to-do items.
      * @path /users/{userId}/todos/{todoId}
      * @allow A signed-in user (auth.uid='user_abc') can (create) their own todo at `/users/user_abc/todos/todo_123`.
