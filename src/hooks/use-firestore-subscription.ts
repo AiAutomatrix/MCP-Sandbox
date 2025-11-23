@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -24,11 +25,14 @@ export function useFirestoreSubscription<T>(
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!collectionPath.every(p => p)) {
+    // If the path is empty or contains falsy values, it means we should not fetch yet.
+    if (collectionPath.length === 0 || !collectionPath.every(p => p)) {
+        setData([]);
         setIsLoading(false);
         return;
     }
     
+    setIsLoading(true);
     let q: Query<DocumentData>;
     try {
         const collRef = collection(db, ...collectionPath);
@@ -59,6 +63,7 @@ export function useFirestoreSubscription<T>(
     );
 
     return () => unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, collectionPath.join('/'), orderField, orderDirection, docLimit]);
 
   return { data, isLoading, error };

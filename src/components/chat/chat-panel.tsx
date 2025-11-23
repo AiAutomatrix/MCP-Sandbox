@@ -17,14 +17,14 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     isLoading,
     error,
   } = useFirestoreSubscription<ChatMessage>(
-    ["users", userId, "sessions", sessionId, "messages"],
+    userId && sessionId ? ["users", userId, "sessions", sessionId, "messages"] : [],
     "timestamp",
     "asc",
     50
   );
 
   const handleSendMessage = (message: string) => {
-    if (isPending) return;
+    if (isPending || !userId) return;
 
     startTransition(async () => {
       const result = await sendMessageAction(sessionId, message, userId);
