@@ -147,13 +147,16 @@ export async function sendMessageAction(
       );
 
       // Log the AI's reasoning and potential tool request
-      await logStep(userId, sessionId, {
-        userMessage: i === 0 ? userMessage : undefined, // Only log user message on first step
+      const reasoningData: any = {
         reasoning: flowOutput.reasoning,
         toolCalls: flowOutput.toolRequest
           ? [JSON.stringify(flowOutput.toolRequest)]
           : [],
-      });
+      };
+      if (i === 0) {
+        reasoningData.userMessage = userMessage;
+      }
+      await logStep(userId, sessionId, reasoningData);
 
       // Save any new facts from this step
       if (flowOutput.newFacts) {
@@ -176,6 +179,7 @@ export async function sendMessageAction(
         });
 
         // Prepare the input for the next loop iteration
+        // Clear userMessage so it's not resent.
         promptInput = { ...promptInput, userMessage: '', toolResponse: toolResult };
         continue; // Go to the next iteration
       }
