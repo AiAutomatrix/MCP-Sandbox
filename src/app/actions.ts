@@ -1,30 +1,31 @@
+
 "use server";
 
 import {
   generateResponseWithTools,
   GenerateResponseWithToolsInput,
 } from "@/ai/flows/generate-response-with-tools";
-import { app } from "@/lib/firebase";
 import { AgentMemoryFact, ChatMessage } from "@/lib/types";
 import {
   addDoc,
   collection,
   getDocs,
-  getFirestore,
   orderBy,
   query,
   serverTimestamp,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
+import { initializeFirebase } from "@/firebase/server-init";
 
-const db = getFirestore(app);
+const { firestore: db } = initializeFirebase();
 
 export async function sendMessageAction(
   sessionId: string,
-  userMessage: string
+  userMessage: string,
+  userId: string
 ): Promise<{ id: string; role: "assistant"; content: string }> {
-  if (!sessionId || !userMessage) {
-    throw new Error("Session ID and user message are required.");
+  if (!sessionId || !userMessage || !userId) {
+    throw new Error("Session ID, user message, and user ID are required.");
   }
 
   try {
@@ -35,14 +36,14 @@ export async function sendMessageAction(
       timestamp: serverTimestamp(),
     };
     await addDoc(
-      collection(db, "sessions", sessionId, "messages"),
+      collection(db, "users", userId, "sessions", sessionId, "messages"),
       userMessageData
     );
 
     // 2. Load memory for the session
     const memoryFacts: AgentMemoryFact[] = [];
     const memoryQuery = query(
-      collection(db, "agent_memory", sessionId, "facts"),
+      collection(db, "users", userId, "agent_memory", sessionId, "facts"),
       orderBy("createdAt", "desc")
     );
     const memorySnapshot = await getDocs(memoryQuery);
@@ -51,7 +52,6 @@ export async function sendMessageAction(
     });
 
     // 3. Define tool descriptors
-    // In a real app, this could be fetched from a registry
     const toolDescriptors = [
       {
         name: "randomFactTool",
@@ -84,20 +84,12 @@ export async function sendMessageAction(
       toolDescriptors,
     };
 
-    // The generateResponseWithTools flow is assumed to handle the full agent loop:
-    // - Sending prompt to LLM
-    // - Executing tool calls if necessary
-    // - Writing logs to /agent_logs
-    // - Writing memory to /agent_memory
-    // - Writing data to /tool_memory
     const { finalResponse, toolCalls } = await generateResponseWithTools(
       flowInput
     );
     
     let responseContent = finalResponse;
     if (!responseContent && toolCalls && toolCalls.length > 0) {
-      // If the flow only returns tool calls, we can provide a generic response.
-      // A more advanced implementation might handle this differently.
       responseContent = `I'm on it. I've initiated the following action(s): ${toolCalls.map(tc => tc.name).join(', ')}.`;
     } else if (!responseContent) {
       responseContent = "I don't have a specific response for that, but I've processed your request.";
@@ -110,19 +102,17 @@ export async function sendMessageAction(
       timestamp: serverTimestamp(),
     };
     const docRef = await addDoc(
-      collection(db, "sessions", sessionId, "messages"),
+      collection(db, "users", userId, "sessions", sessionId, "messages"),
       assistantMessageData
     );
 
-    // Revalidate the path to show new messages
     revalidatePath("/");
 
     return { id: docRef.id, role: "assistant", content: responseContent };
   } catch (error) {
     console.error("Error in sendMessageAction:", error);
     const errorMessage = "Sorry, something went wrong while processing your request.";
-    // Optionally save an error message to the chat
-    await addDoc(collection(db, "sessions", sessionId, "messages"), {
+    await addDoc(collection(db, "users", userId, "sessions", sessionId, "messages"), {
       role: "assistant",
       content: errorMessage,
       timestamp: serverTimestamp(),

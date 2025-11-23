@@ -1,3 +1,4 @@
+
 "use client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -16,7 +17,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 
-export function ObservabilitySidebar({ sessionId }: { sessionId: string }) {
+export function ObservabilitySidebar({ sessionId, userId }: { sessionId: string, userId: string }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -57,19 +58,19 @@ export function ObservabilitySidebar({ sessionId }: { sessionId: string }) {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="logs" className="flex-1 overflow-y-auto p-2 m-0">
-            <AgentLogViewer sessionId={sessionId} />
+            <AgentLogViewer sessionId={sessionId} userId={userId}/>
           </TabsContent>
           <TabsContent
             value="agent_memory"
             className="flex-1 overflow-y-auto p-2 m-0"
           >
-            <AgentMemoryViewer sessionId={sessionId} />
+            <AgentMemoryViewer sessionId={sessionId} userId={userId}/>
           </TabsContent>
           <TabsContent
             value="tool_memory"
             className="flex-1 overflow-y-auto p-2 m-0"
           >
-            <ToolMemoryViewer />
+            <ToolMemoryViewer userId={userId}/>
           </TabsContent>
         </Tabs>
       </div>

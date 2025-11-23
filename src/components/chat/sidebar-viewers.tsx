@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -26,13 +27,13 @@ const EmptyState = ({ message }: { message: string }) => (
   </div>
 );
 
-export function AgentLogViewer({ sessionId }: { sessionId: string }) {
+export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userId: string }) {
   const {
     data: logs,
     isLoading,
     error,
   } = useFirestoreSubscription<AgentLogStep>(
-    ["agent_logs", sessionId, "steps"],
+    ["users", userId, "agent_logs", sessionId, "steps"],
     "timestamp",
     "desc",
     20
@@ -84,13 +85,13 @@ export function AgentLogViewer({ sessionId }: { sessionId: string }) {
   );
 }
 
-export function AgentMemoryViewer({ sessionId }: { sessionId: string }) {
+export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, userId: string }) {
   const {
     data: facts,
     isLoading,
     error,
   } = useFirestoreSubscription<AgentMemoryFact>(
-    ["agent_memory", sessionId, "facts"],
+    ["users", userId, "agent_memory", sessionId, "facts"],
     "createdAt",
     "desc"
   );
@@ -120,13 +121,13 @@ export function AgentMemoryViewer({ sessionId }: { sessionId: string }) {
   );
 }
 
-export function ToolMemoryViewer() {
+export function ToolMemoryViewer({ userId }: { userId: string }) {
   const {
     data: todos,
     isLoading,
     error,
   } = useFirestoreSubscription<TodoItem>(
-    ["tool_memory", "todoTool", "items"],
+    ["users", userId, "tool_memory", "todoTool", "items"],
     "createdAt",
     "desc"
   );

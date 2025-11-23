@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useTransition } from "react";
@@ -8,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ChatMessages } from "./chat-messages";
 import { ChatInput } from "./chat-input";
 
-export function ChatPanel({ sessionId }: { sessionId: string }) {
+export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: string }) {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const {
@@ -16,7 +17,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     isLoading,
     error,
   } = useFirestoreSubscription<ChatMessage>(
-    ["sessions", sessionId, "messages"],
+    ["users", userId, "sessions", sessionId, "messages"],
     "timestamp",
     "asc",
     50
@@ -26,7 +27,7 @@ export function ChatPanel({ sessionId }: { sessionId: string }) {
     if (isPending) return;
 
     startTransition(async () => {
-      const result = await sendMessageAction(sessionId, message);
+      const result = await sendMessageAction(sessionId, message, userId);
       if (result.id === "error") {
         toast({
           variant: "destructive",

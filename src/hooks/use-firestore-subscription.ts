@@ -10,7 +10,7 @@ import {
   DocumentData,
   limit,
 } from "firebase/firestore";
-import { useFirebase } from "@/firebase/provider";
+import { useFirestore } from "@/firebase";
 
 export function useFirestoreSubscription<T>(
   collectionPath: string[],
@@ -18,7 +18,7 @@ export function useFirestoreSubscription<T>(
   orderDirection: "asc" | "desc" = "asc",
   docLimit: number = 100
 ) {
-  const { db } = useFirebase();
+  const db = useFirestore();
   const [data, setData] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
