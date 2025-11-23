@@ -14,6 +14,7 @@ import { initializeFirebase } from '@/firebase/server-init';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 const { firestore: db } = initializeFirebase();
 
@@ -76,13 +77,12 @@ const addTodo = ai.defineTool(
 
 const addTodoItemPrompt = ai.definePrompt({
   name: 'addTodoItemPrompt',
-  input: {schema: AddTodoItemInputSchema},
+  input: {schema: z.object({ item: z.string() }) },
   output: {schema: AddTodoItemOutputSchema},
   tools: [addTodo],
-  prompt: `You are a helpful assistant that manages a user's to-do list. When the user asks to add an item to their to-do list, use the addTodo tool to add the item. You must extract the userId from the sessionId, as the tool requires a userId. A sessionId is structured as 'user-id:session-id'. Respond to the user confirming that you added the item to their list. Think step by step.
+  prompt: `You are a helpful assistant that manages a user's to-do list. When the user asks to add an item to their to-do list, use the addTodo tool to add the item. 
 
-User Input: {{{item}}}
-Session ID: {{{sessionId}}}`,
+User Input: {{{item}}}`,
 });
 
 const addTodoItemFlow = ai.defineFlow(
@@ -93,15 +93,19 @@ const addTodoItemFlow = ai.defineFlow(
   },
   async input => {
     const userId = input.sessionId.split(':')[0];
-    
-    const {output} = await addTodoItemPrompt({ ...input, sessionId: `user-id:${userId}:session-id` });
-    if(output?.toolCalls) {
-        for(const toolCall of output.toolCalls) {
-            if(toolCall.name === 'addTodo') {
-                toolCall.arguments.userId = userId;
+    const {output} = await addTodoItemPrompt(
+      { item: input.item },
+      // The tool call needs the userId. We'll add it to the arguments here.
+      {
+        tools: {
+          addTodo: {
+            arguments: {
+              userId,
             }
+          }
         }
-    }
+      }
+    );
     return output!;
   }
 );
