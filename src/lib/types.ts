@@ -14,8 +14,8 @@ export interface AgentLogStep {
   userMessage: string;
   modelResponse?: string;
   reasoning?: string;
-  toolCalls?: { name: string; input: any }[];
-  toolResults?: any[];
+  toolCalls?: any[]; // Allow flexible structure for logging
+  toolResults?: any[]; // Allow flexible structure for logging
   finalResponse?: string;
 }
 

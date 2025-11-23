@@ -104,13 +104,19 @@ export async function sendMessageAction(
       .map((doc) => (doc.data() as AgentMemoryFact).text)
       .filter((text) => text);
 
-    // 3. Call the Genkit flow with message and memory
+    // 3. Call the Genkit flow with message and memory.
+    // The generateResponse flow now handles the tool loop internally.
     const flowInput: GenerateResponseInput = {
       userMessage,
       memory,
+      // Pass the session ID to the flow so tools can use it
+      // Note: This requires updating the flow's input schema to accept sessionId
+      // For now, we will pass it inside the userMessage or handle it in the tool input directly.
+      // Let's have the tool get it from its own input.
     };
     
-    // The generateResponse flow now handles the tool loop internally.
+    // The generateResponse flow from the user handles the tool loop internally.
+    // We just need to call it once and wait for the final output.
     const flowOutput = await generateResponse(flowInput);
 
     const responseContent =
@@ -131,9 +137,10 @@ export async function sendMessageAction(
       timestamp: FieldValue.serverTimestamp(),
       userMessage: userMessage,
       reasoning: flowOutput.reasoning || 'No reasoning provided.',
-      // The new flow includes these fields directly
-      toolCalls: flowOutput.toolRequest ? [flowOutput.toolRequest] : [], 
-      toolResults: flowOutput.toolResponse ? [flowOutput.toolResponse] : [],
+      // The new flow includes these fields directly, but they might be intermediate.
+      // For logging, we'll just log the final state.
+      toolCalls: flowOutput.toolRequest ? [JSON.stringify(flowOutput.toolRequest)] : [], 
+      toolResults: flowOutput.toolResponse ? [JSON.stringify(flowOutput.toolResponse)] : [],
       finalResponse: responseContent,
     });
 
@@ -162,7 +169,7 @@ export async function sendMessageAction(
     const errorMessage =
       'Sorry, something went wrong while processing your request.';
     try {
-      await db
+      const docRef = await db
         .collection(`users/${userId}/sessions/${sessionId}/messages`)
         .add({
           role: 'assistant',
@@ -179,12 +186,12 @@ export async function sendMessageAction(
         toolCalls: [],
         toolResults: [],
       });
+      revalidatePath('/');
+      return { id: docRef.id, role: 'assistant', content: errorMessage };
     } catch (dbError) {
       console.error('Error saving error message to Firestore:', dbError);
+       revalidatePath('/');
+      return { id: 'error', role: 'assistant', content: errorMessage };
     }
-    revalidatePath('/');
-    return { id: 'error', role: 'assistant', content: errorMessage };
   }
 }
-
-    
