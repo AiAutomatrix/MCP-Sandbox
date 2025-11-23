@@ -1,9 +1,10 @@
-
 'use server';
 
 import {
   generateResponse,
   GenerateResponseInput,
+  GenerateResponseOutput,
+  TOOL_REGISTRY,
 } from '@/ai/flows/generate-response';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
@@ -11,7 +12,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import type { AgentMemoryFact } from '@/lib/types';
 
 const { firestore: db } = initializeFirebase();
+const MAX_TOOL_LOOPS = 5;
 
+// Helper to delete subcollections
 async function deleteCollection(
   collectionPath: string,
   batchSize: number = 50
@@ -46,6 +49,7 @@ async function deleteQueryBatch(
   });
 }
 
+// Action to create a new conversation (deletes the old one)
 export async function createNewConversationAction(
   userId: string,
   sessionId: string
@@ -56,13 +60,9 @@ export async function createNewConversationAction(
 
   try {
     const sessionRef = db.doc(`users/${userId}/sessions/${sessionId}`);
-
-    // Delete subcollections first
     await deleteCollection(`users/${userId}/sessions/${sessionId}/messages`);
     await deleteCollection(`users/${userId}/sessions/${sessionId}/steps`);
     await deleteCollection(`users/${userId}/sessions/${sessionId}/facts`);
-
-    // Delete the session document itself
     await sessionRef.delete();
 
     revalidatePath('/');
@@ -76,6 +76,41 @@ export async function createNewConversationAction(
   }
 }
 
+// Helper to save a log step
+async function logStep(
+  userId: string,
+  sessionId: string,
+  stepData: object
+) {
+  await db
+    .collection(`users/${userId}/sessions/${sessionId}/steps`)
+    .add({ ...stepData, timestamp: FieldValue.serverTimestamp() });
+}
+
+// Helper to save new memory facts
+async function saveFacts(
+  userId: string,
+  sessionId: string,
+  newFacts: string[]
+) {
+  if (newFacts && newFacts.length > 0) {
+    const batch = db.batch();
+    const factsCollection = db.collection(
+      `users/${userId}/sessions/${sessionId}/facts`
+    );
+    newFacts.forEach((factText) => {
+      const newFactRef = factsCollection.doc();
+      batch.set(newFactRef, {
+        text: factText,
+        createdAt: FieldValue.serverTimestamp(),
+        source: 'agent',
+      });
+    });
+    await batch.commit();
+  }
+}
+
+// Main action to handle sending a message
 export async function sendMessageAction(
   sessionId: string,
   userMessage: string,
@@ -86,14 +121,12 @@ export async function sendMessageAction(
   }
 
   try {
-    // 1. Save user message to Firestore
-    await db
-      .collection(`users/${userId}/sessions/${sessionId}/messages`)
-      .add({
-        role: 'user',
-        content: userMessage,
-        timestamp: FieldValue.serverTimestamp(),
-      });
+    // 1. Save user message
+    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
+      role: 'user',
+      content: userMessage,
+      timestamp: FieldValue.serverTimestamp(),
+    });
 
     // 2. Fetch existing memory
     const factsSnapshot = await db
@@ -104,94 +137,92 @@ export async function sendMessageAction(
       .map((doc) => (doc.data() as AgentMemoryFact).text)
       .filter((text) => text);
 
-    // 3. Call the Genkit flow with message and memory.
-    // The generateResponse flow now handles the tool loop internally.
-    const flowInput: GenerateResponseInput = {
-      userMessage,
-      memory,
-      // Pass the session ID to the flow so tools can use it
-      // Note: This requires updating the flow's input schema to accept sessionId
-      // For now, we will pass it inside the userMessage or handle it in the tool input directly.
-      // Let's have the tool get it from its own input.
-    };
-    
-    // The generateResponse flow from the user handles the tool loop internally.
-    // We just need to call it once and wait for the final output.
-    const flowOutput = await generateResponse(flowInput);
+    // 3. Start the agent loop
+    let promptInput: GenerateResponseInput = { userMessage, memory };
+    let finalResponse = '';
 
-    const responseContent =
-      flowOutput.response || "Sorry, I couldn't come up with a response.";
+    for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
+      const flowOutput: GenerateResponseOutput = await generateResponse(
+        promptInput
+      );
 
-    // 4. Save assistant message to Firestore
+      // Log the AI's reasoning and potential tool request
+      await logStep(userId, sessionId, {
+        userMessage: i === 0 ? userMessage : undefined, // Only log user message on first step
+        reasoning: flowOutput.reasoning,
+        toolCalls: flowOutput.toolRequest
+          ? [JSON.stringify(flowOutput.toolRequest)]
+          : [],
+      });
+
+      // Save any new facts from this step
+      if (flowOutput.newFacts) {
+        await saveFacts(userId, sessionId, flowOutput.newFacts);
+      }
+      
+      // 4. Check for a tool request
+      if (flowOutput.toolRequest) {
+        const tool = TOOL_REGISTRY[flowOutput.toolRequest.name];
+        if (!tool) {
+          throw new Error(`Unknown tool: ${flowOutput.toolRequest.name}`);
+        }
+        
+        // Execute the tool
+        const toolResult = await tool(flowOutput.toolRequest.input ?? {});
+
+        // Log the tool's result
+        await logStep(userId, sessionId, {
+            toolResults: [JSON.stringify(toolResult)]
+        });
+
+        // Prepare the input for the next loop iteration
+        promptInput = { ...promptInput, userMessage: '', toolResponse: toolResult };
+        continue; // Go to the next iteration
+      }
+
+      // 5. If no tool request, we have our final answer
+      if (flowOutput.response) {
+        finalResponse = flowOutput.response;
+        // Log the final response
+         await logStep(userId, sessionId, {
+            finalResponse: finalResponse
+        });
+        break; // Exit the loop
+      }
+    }
+
+    if (!finalResponse) {
+      finalResponse = "Sorry, I couldn't come up with a response.";
+    }
+
+    // 6. Save the final assistant message
     const docRef = await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
       .add({
         role: 'assistant',
-        content: responseContent,
+        content: finalResponse,
         timestamp: FieldValue.serverTimestamp(),
       });
-
-    // 5. Create a log entry for the turn.
-    // The flow output from the tool-enabled flow contains everything we need.
-    await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
-      timestamp: FieldValue.serverTimestamp(),
-      userMessage: userMessage,
-      reasoning: flowOutput.reasoning || 'No reasoning provided.',
-      // The new flow includes these fields directly, but they might be intermediate.
-      // For logging, we'll just log the final state.
-      toolCalls: flowOutput.toolRequest ? [JSON.stringify(flowOutput.toolRequest)] : [], 
-      toolResults: flowOutput.toolResponse ? [JSON.stringify(flowOutput.toolResponse)] : [],
-      finalResponse: responseContent,
-    });
-
-    // 6. Save new facts to memory, if any
-    if (flowOutput.newFacts && flowOutput.newFacts.length > 0) {
-      const batch = db.batch();
-      const factsCollection = db.collection(
-        `users/${userId}/sessions/${sessionId}/facts`
-      );
-      flowOutput.newFacts.forEach((factText) => {
-        const newFactRef = factsCollection.doc();
-        batch.set(newFactRef, {
-          text: factText,
-          createdAt: FieldValue.serverTimestamp(),
-          source: 'agent',
-        });
-      });
-      await batch.commit();
-    }
 
     revalidatePath('/');
-
-    return { id: docRef.id, role: 'assistant', content: responseContent };
+    return { id: docRef.id, role: 'assistant', content: finalResponse };
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
-    const errorMessage =
-      'Sorry, something went wrong while processing your request.';
-    try {
-      const docRef = await db
-        .collection(`users/${userId}/sessions/${sessionId}/messages`)
-        .add({
-          role: 'assistant',
-          content: errorMessage,
-          timestamp: FieldValue.serverTimestamp(),
-        });
-      await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
+    const errorMessage = 'Sorry, something went wrong while processing your request.';
+    // Attempt to save an error message to the chat for user feedback
+    const docRef = await db
+      .collection(`users/${userId}/sessions/${sessionId}/messages`)
+      .add({
+        role: 'assistant',
+        content: errorMessage,
         timestamp: FieldValue.serverTimestamp(),
-        userMessage: userMessage,
-        finalResponse: errorMessage,
-        reasoning: `Error occurred: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        toolCalls: [],
-        toolResults: [],
       });
-      revalidatePath('/');
-      return { id: docRef.id, role: 'assistant', content: errorMessage };
-    } catch (dbError) {
-      console.error('Error saving error message to Firestore:', dbError);
-       revalidatePath('/');
-      return { id: 'error', role: 'assistant', content: errorMessage };
-    }
+    await logStep(userId, sessionId, {
+      userMessage,
+      finalResponse: errorMessage,
+      reasoning: `Error: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    revalidatePath('/');
+    return { id: docRef.id, role: 'assistant', content: errorMessage };
   }
 }

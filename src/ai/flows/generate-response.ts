@@ -2,13 +2,19 @@
 /**
  * generate-response-with-tools.ts
  *
- * Adds a simple MCP-style tool loop to your existing generateResponse flow.
- * - Tools: mathEvaluator, todoTool (uses Firestore via firebase-admin)
- * - The model may return a `toolRequest`. When that happens, the agent executes
- *   the named tool, supplies `toolResponse` back to the model, and asks the model
- *   to finalize or call another tool.
+ * This file defines the core AI flow for the Gemini Sandbox application.
+ * It is responsible for generating a response from the model based on user input,
+ * conversation memory, and available tools.
  *
- * Usage: call `generateResponse(input)` the same way you called the previous flow.
+ * Key features:
+ * - **Tool-Aware:** It can request the execution of predefined tools (like `mathEvaluator` or `todoTool`).
+ * - **Memory-Aware:** It takes into account facts from the current conversation.
+ * - **Step-by-Step Execution:** Unlike a fully self-contained loop, this flow executes ONE step at a time.
+ *   If the model requests a tool, the flow returns the `toolRequest` to the calling action. The action
+ *   is then responsible for executing the tool and calling this flow again with the `toolResponse`.
+ *
+ * This design allows the controlling server action to have full visibility and log each step of the agent's
+ * reasoning and tool-use process.
  */
 
 import { ai } from '@/ai/genkit';
@@ -23,18 +29,21 @@ if (!admin.apps.length) {
     // ignore double init in non-cloud-run environments
   }
 }
-const db = admin.firestore();
+export const db = admin.firestore();
 
 // -----------------------------
 // Tool Definitions
 // -----------------------------
 
-const mathEvaluator = ai.defineTool(
+export const mathEvaluator = ai.defineTool(
   {
     name: 'mathEvaluator',
-    description: 'Evaluates a simple mathematical expression. (demo only; eval used for speed)',
+    description:
+      'Evaluates a simple mathematical expression. (demo only; eval used for speed)',
     inputSchema: z.object({
-      expression: z.string().describe('A simple JS math expression like "2+2*3"'),
+      expression: z
+        .string()
+        .describe('A simple JS math expression like "2+2*3"'),
     }),
     outputSchema: z.any(),
   },
@@ -45,12 +54,14 @@ const mathEvaluator = ai.defineTool(
       const result = eval(input.expression);
       return { result: String(result) };
     } catch (err: any) {
-      return { error: `Error evaluating expression: ${err?.message ?? String(err)}` };
+      return {
+        error: `Error evaluating expression: ${err?.message ?? String(err)}`,
+      };
     }
   }
 );
 
-const todoTool = ai.defineTool(
+export const todoTool = ai.defineTool(
   {
     name: 'todoTool',
     description:
@@ -59,7 +70,10 @@ const todoTool = ai.defineTool(
       action: z
         .enum(['add', 'list', 'complete'])
         .describe('Action to perform on todos'),
-      sessionId: z.string().optional().describe('Optional sessionId to scope todos'),
+      sessionId: z
+        .string()
+        .optional()
+        .describe('Optional sessionId to scope todos'),
       text: z.string().optional().describe('Text for add action'),
       id: z.string().optional().describe('ID for complete action'),
     }),
@@ -80,10 +94,16 @@ const todoTool = ai.defineTool(
       }
 
       if (input.action === 'list') {
-        let q = db.collection(collectionBase).orderBy('createdAt', 'desc').limit(200);
+        let q = db
+          .collection(collectionBase)
+          .orderBy('createdAt', 'desc')
+          .limit(200);
         if (input.sessionId) q = q.where('sessionId', '==', input.sessionId);
         const snap = await q.get();
-        const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        const items = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        }));
         return { items };
       }
 
@@ -102,42 +122,49 @@ const todoTool = ai.defineTool(
 );
 
 // Tool registry for runtime execution
-const TOOL_REGISTRY: Record<string, any> = {
+export const TOOL_REGISTRY: Record<string, any> = {
   mathEvaluator,
   todoTool,
 };
 
 // -----------------------------
-// Schemas (extended for tool requests/responses)
+// Schemas
 // -----------------------------
 
-const ToolRequestSchema = z.object({
+export const ToolRequestSchema = z.object({
   name: z.string().describe('Tool name to call'),
   input: z.any().optional().describe('Tool input payload'),
 });
 
-const ToolResponseSchema = z.any();
-
-const GenerateResponseInputSchema = z.object({
+export const GenerateResponseInputSchema = z.object({
   userMessage: z.string().describe('The user message to be processed.'),
-  memory: z.array(z.string()).describe('A list of facts the agent has remembered from the conversation.'),
-  // Optional incoming toolResponse from previous tool execution loop
-  toolResponse: z.any().optional().describe('Optional result from a tool run (for tool loops)'),
+  memory: z
+    .array(z.string())
+    .describe('A list of facts the agent has remembered from the conversation.'),
+  toolResponse: z
+    .any()
+    .optional()
+    .describe('Optional result from a tool run (for tool loops)'),
 });
-
 export type GenerateResponseInput = z.infer<typeof GenerateResponseInputSchema>;
 
-const GenerateResponseOutputSchema = z.object({
-  response: z.string().describe('The response generated by the model.'),
-  reasoning: z.string().describe('The step-by-step reasoning process of the model.'),
-  newFacts: z.array(z.string()).describe('New facts to save to memory.'),
-  // Optional suggested tool request (model asks the runtime to run a tool)
-  toolRequest: ToolRequestSchema.optional(),
-  // Optional tool response included when model returns it in structured output
-  toolResponse: ToolResponseSchema.optional(),
+export const GenerateResponseOutputSchema = z.object({
+  response: z.string().optional().describe('The response generated by the model.'),
+  reasoning: z
+    .string()
+    .optional()
+    .describe('The step-by-step reasoning process of the model.'),
+  newFacts: z
+    .array(z.string())
+    .optional()
+    .describe('New facts to save to memory.'),
+  toolRequest: ToolRequestSchema.optional().describe(
+    'Optional suggested tool request (model asks the runtime to run a tool)'
+  ),
 });
-
-export type GenerateResponseOutput = z.infer<typeof GenerateResponseOutputSchema>;
+export type GenerateResponseOutput = z.infer<
+  typeof GenerateResponseOutputSchema
+>;
 
 // -----------------------------
 // Prompt
@@ -156,20 +183,17 @@ You are given:
 
 Your goals:
 1. Answer the user's message directly and conversationally.
-2. If you *need* external actions or data (math, todo operations), request a tool by returning a structured object in 'toolRequest', e.g.:
-   { "toolRequest": { "name": "mathEvaluator", "input": { "expression": "2+2" } } }
-   OR
-   { "toolRequest": { "name": "todoTool", "input": { "action": "add", "text": "buy milk", "sessionId": "s1" } } }
+2. If you *need* external actions or data (math, todo operations), request a tool by returning a structured object in 'toolRequest'.
+   e.g., { "toolRequest": { "name": "mathEvaluator", "input": { "expression": "2+2" } } }
 
-   If you request a tool, **do not** also provide the final user-facing response yet — instead the runtime will run the tool and return its result to you as \`toolResponse\`. After receiving \`toolResponse\`, call the prompt again and finalize the response.
+   If you request a tool, **do not** also provide the final user-facing \`response\`. The runtime will execute the tool and feed the result back to you. After receiving the \`toolResponse\`, you can then formulate the final answer.
 
 3. Provide \`reasoning\` (brief) explaining how you answered or why you requested the tool.
-4. Return \`newFacts\` — small facts to save to memory (or []).
+4. Return \`newFacts\` — small, useful facts to save to memory (or an empty array).
 
 Remember:
 - If \`toolResponse\` is present, incorporate it into your reasoning and provide a final user-facing \`response\`.
-- Keep \`toolRequest\` and \`toolResponse\` strictly JSON-serializable (no functions).
-- Only request tools when necessary.
+- Only request tools when absolutely necessary. If the user is just chatting, have a normal conversation.
 
 Current Memory/Facts:
 {{#if memory}}
@@ -193,92 +217,14 @@ Previous tool result (if any):
 });
 
 // -----------------------------
-// Flow (implements tool loop)
+// Flow (executes a single step)
 // -----------------------------
-
 export async function generateResponse(
   input: GenerateResponseInput
 ): Promise<GenerateResponseOutput> {
-  return generateResponseFlow(input);
-}
-
-const MAX_TOOL_LOOPS = 3;
-
-const generateResponseFlow = ai.defineFlow(
-  {
-    name: 'generateResponseWithToolsFlow',
-    inputSchema: GenerateResponseInputSchema,
-    outputSchema: GenerateResponseOutputSchema,
-  },
-  async (input) => {
-    // local copy we will update with toolResponse when available
-    let promptInput: any = { ...input };
-
-    let lastOutput: GenerateResponseOutput | null = null;
-
-    for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
-      const { output } = await generateResponsePrompt(promptInput);
-      if (!output) throw new Error('No output from model');
-
-      // model's structured output
-      const modelOut = output as GenerateResponseOutput;
-      lastOutput = modelOut;
-
-      // If the model requested a tool, execute it and feed the result back
-      if (modelOut.toolRequest && modelOut.toolRequest.name) {
-        const tr = modelOut.toolRequest;
-        const tool = TOOL_REGISTRY[tr.name];
-        if (!tool) {
-          // If requested unknown tool, return an error-like response
-          return {
-            response: `I can't run the tool "${tr.name}".`,
-            reasoning: `Requested unknown tool: ${tr.name}`,
-            newFacts: [],
-          };
-        }
-
-        let toolResult: any;
-        try {
-          // The 'tool' variable is the actual awaitable tool function defined with `ai.defineTool`.
-          // We can call it directly with the input provided by the model.
-          toolResult = await tool(tr.input ?? {});
-        } catch (err: any) {
-          toolResult = { error: err?.message ?? String(err) };
-        }
-
-        // Put the tool result back into the prompt and loop
-        promptInput = {
-          ...promptInput,
-          toolResponse: toolResult,
-        };
-
-        // continue the loop to allow the model to finalize after seeing toolResponse
-        continue;
-      }
-
-      // No tool requested — we have a final response
-      return {
-        response: modelOut.response,
-        reasoning: modelOut.reasoning,
-        newFacts: modelOut.newFacts || [],
-        // ensure no dangling toolRequest/toolResponse in return schema
-      } as GenerateResponseOutput;
-    }
-
-    // Max loop reached — return last output (if present)
-    if (lastOutput) {
-      return {
-        response: lastOutput.response || 'Sorry — could not finish tool loop.',
-        reasoning: lastOutput.reasoning || 'Max tool loops reached.',
-        newFacts: lastOutput.newFacts || [],
-      };
-    }
-
-    // Shouldn't happen, but safe fallback
-    return {
-      response: 'No output from model.',
-      reasoning: 'No output after running the prompt.',
-      newFacts: [],
-    };
+  const { output } = await generateResponsePrompt(input);
+  if (!output) {
+    throw new Error('No output from model');
   }
-);
+  return output;
+}
