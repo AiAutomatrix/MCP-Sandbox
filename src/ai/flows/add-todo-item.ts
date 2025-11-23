@@ -10,9 +10,13 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { initializeFirebase } from '@/firebase/server-init';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+const { firestore: db } = initializeFirebase();
 
 const AddTodoItemInputSchema = z.object({
-  sessionId: z.string().describe('The session ID of the user.'),
+  sessionId: z.string().describe("The session ID of the user. This is used to extract the user ID."),
   item: z.string().describe('The to-do item to add.'),
 });
 export type AddTodoItemInput = z.infer<typeof AddTodoItemInputSchema>;
@@ -30,9 +34,9 @@ async function addTodoItem(input: AddTodoItemInput): Promise<AddTodoItemOutput> 
 const addTodo = ai.defineTool(
   {
     name: 'addTodo',
-    description: 'Adds a to-do item to the user\'s to-do list.',
+    description: "Adds a to-do item to the user's to-do list.",
     inputSchema: z.object({
-      sessionId: z.string().describe('The session ID of the user.'),
+      userId: z.string().describe("The ID of the user for whom the to-do should be added."),
       text: z.string().describe('The text of the to-do item to add.'),
     }),
     outputSchema: z.object({
@@ -40,17 +44,26 @@ const addTodo = ai.defineTool(
       message: z.string().describe('A message indicating the result of the operation.'),
     }),
   },
-  async input => {
-    // Simulate adding the todo item to a database or external service here
-    // In a real application, you would interact with Firestore or another data store
-
-    console.log(`Adding todo item: ${input.text} for session: ${input.sessionId}`);
-
-    // For now, just return a success message
-    return {
-      success: true,
-      message: `Successfully added todo item: ${input.text}`, // backticks
-    };
+  async ({ userId, text }) => {
+    try {
+      const todosCollection = collection(db, 'users', userId, 'todos');
+      await addDoc(todosCollection, {
+        text,
+        completed: false,
+        createdAt: serverTimestamp(),
+      });
+      return {
+        success: true,
+        message: `Successfully added to-do item: "${text}"`,
+      };
+    } catch (error) {
+      console.error('Error adding todo to Firestore:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+      return {
+        success: false,
+        message: `Failed to add todo item. Reason: ${errorMessage}`,
+      };
+    }
   }
 );
 
@@ -59,10 +72,10 @@ const addTodoItemPrompt = ai.definePrompt({
   input: {schema: AddTodoItemInputSchema},
   output: {schema: AddTodoItemOutputSchema},
   tools: [addTodo],
-  prompt: `You are a helpful assistant that manages a user's to-do list. When the user asks to add an item to their to-do list, use the addTodo tool to add the item, using the provided sessionId.  A sessionId of 'test' indicates that the user is running in a test environment and does not have a real session. Respond to the user confirming that you added the item to their list. Think step by step.
+  prompt: `You are a helpful assistant that manages a user's to-do list. When the user asks to add an item to their to-do list, use the addTodo tool to add the item. You must extract the userId from the sessionId, as the tool requires a userId. A sessionId is structured as 'user-id:session-id'. Respond to the user confirming that you added the item to their list. Think step by step.
 
 User Input: {{{item}}}
-Session ID: {{{sessionId}}}`, // backticks
+Session ID: {{{sessionId}}}`,
 });
 
 const addTodoItemFlow = ai.defineFlow(
@@ -72,7 +85,16 @@ const addTodoItemFlow = ai.defineFlow(
     outputSchema: AddTodoItemOutputSchema,
   },
   async input => {
-    const {output} = await addTodoItemPrompt(input);
+    const userId = input.sessionId.split(':')[0];
+    
+    const {output} = await addTodoItemPrompt({ ...input, sessionId: `user-id:${userId}:session-id` });
+    if(output?.toolCalls) {
+        for(const toolCall of output.toolCalls) {
+            if(toolCall.name === 'addTodo') {
+                toolCall.arguments.userId = userId;
+            }
+        }
+    }
     return output!;
   }
 );

@@ -5,7 +5,7 @@ import {
   generateResponseWithTools,
   GenerateResponseWithToolsInput,
 } from "@/ai/flows/generate-response-with-tools";
-import { AgentMemoryFact, ChatMessage } from "@/lib/types";
+import { AgentMemoryFact } from "@/lib/types";
 import {
   addDoc,
   collection,
@@ -16,6 +16,8 @@ import {
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { initializeFirebase } from "@/firebase/server-init";
+import { addTodoItem } from "@/ai/flows/add-todo-item";
+import { getRandomFact } from "@/ai/flows/return-random-fact";
 
 const { firestore: db } = initializeFirebase();
 
@@ -43,7 +45,7 @@ export async function sendMessageAction(
     // 2. Load memory for the session
     const memoryFacts: AgentMemoryFact[] = [];
     const memoryQuery = query(
-      collection(db, "users", userId, "agent_memory", sessionId, "facts"),
+      collection(db, "users", userId, "sessions", sessionId, "agent_memory"),
       orderBy("createdAt", "desc")
     );
     const memorySnapshot = await getDocs(memoryQuery);
@@ -65,7 +67,7 @@ export async function sendMessageAction(
         inputSchema: {
           type: "object",
           properties: {
-            sessionId: { type: "string" },
+            userId: { type: "string" },
             text: { type: "string" },
           },
         },
@@ -78,7 +80,7 @@ export async function sendMessageAction(
 
     // 4. Call the Genkit flow
     const flowInput: GenerateResponseWithToolsInput = {
-      sessionId,
+      sessionId: `${userId}:${sessionId}`,
       userMessage,
       memoryFacts: memoryFacts.map((fact) => fact.text),
       toolDescriptors,
@@ -87,13 +89,27 @@ export async function sendMessageAction(
     const { finalResponse, toolCalls } = await generateResponseWithTools(
       flowInput
     );
-    
+
     let responseContent = finalResponse;
-    if (!responseContent && toolCalls && toolCalls.length > 0) {
-      responseContent = `I'm on it. I've initiated the following action(s): ${toolCalls.map(tc => tc.name).join(', ')}.`;
-    } else if (!responseContent) {
+
+    if (toolCalls && toolCalls.length > 0) {
+      let toolResponseMessages = "";
+      for (const toolCall of toolCalls) {
+        if (toolCall.name === 'addTodo') {
+          const result = await addTodoItem({ sessionId: `${userId}:${sessionId}`, item: toolCall.arguments.text });
+          toolResponseMessages += result.message + "\n";
+        } else if (toolCall.name === 'randomFactTool') {
+            const result = await getRandomFact({});
+            toolResponseMessages += result.fact + "\n";
+        }
+      }
+      responseContent = toolResponseMessages.trim();
+    }
+    
+    if (!responseContent) {
       responseContent = "I don't have a specific response for that, but I've processed your request.";
     }
+
 
     // 5. Save assistant message to Firestore
     const assistantMessageData = {

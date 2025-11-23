@@ -2,19 +2,28 @@
 
 import { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { useUser } from "@/firebase";
 
-const SESSION_KEY = "gemini_sandbox_session_id";
+const SESSION_KEY_PREFIX = "gemini_sandbox_session_id_";
 
 export function useSession() {
+  const { user } = useUser();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    if (!user) {
+      setIsLoaded(false);
+      setSessionId(null);
+      return;
+    }
+
     try {
-      let storedSessionId = localStorage.getItem(SESSION_KEY);
+      const sessionKey = `${SESSION_KEY_PREFIX}${user.uid}`;
+      let storedSessionId = localStorage.getItem(sessionKey);
       if (!storedSessionId) {
         storedSessionId = uuidv4();
-        localStorage.setItem(SESSION_KEY, storedSessionId);
+        localStorage.setItem(sessionKey, storedSessionId);
       }
       setSessionId(storedSessionId);
     } catch (error) {
@@ -26,7 +35,7 @@ export function useSession() {
     } finally {
       setIsLoaded(true);
     }
-  }, []);
+  }, [user]);
 
   return { sessionId, isLoaded };
 }

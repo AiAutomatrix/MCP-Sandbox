@@ -33,7 +33,7 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
     isLoading,
     error,
   } = useFirestoreSubscription<AgentLogStep>(
-    ["users", userId, "agent_logs", sessionId, "steps"],
+    ["users", userId, "sessions", sessionId, "agent_logs"],
     "timestamp",
     "desc",
     20
@@ -91,7 +91,7 @@ export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, us
     isLoading,
     error,
   } = useFirestoreSubscription<AgentMemoryFact>(
-    ["users", userId, "agent_memory", sessionId, "facts"],
+    ["users", userId, "sessions", sessionId, "agent_memory"],
     "createdAt",
     "desc"
   );
@@ -127,7 +127,7 @@ export function ToolMemoryViewer({ userId }: { userId: string }) {
     isLoading,
     error,
   } = useFirestoreSubscription<TodoItem>(
-    ["users", userId, "tool_memory", "todoTool", "items"],
+    ["users", userId, "todos"],
     "createdAt",
     "desc"
   );
