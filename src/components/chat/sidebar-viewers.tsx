@@ -9,9 +9,11 @@ import {
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFirestoreSubscription } from "@/hooks/use-firestore-subscription";
+import { useCollection, useMemoFirebase } from "@/firebase";
 import { AgentLogStep, AgentMemoryFact, TodoItem } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { collection, query, orderBy } from 'firebase/firestore';
+import { useFirestore } from "@/firebase";
 
 const ViewerSkeleton = () => (
   <div className="space-y-2">
@@ -28,20 +30,21 @@ const EmptyState = ({ message }: { message: string }) => (
 );
 
 export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userId: string }) {
+  const db = useFirestore();
+  const logsQuery = useMemoFirebase(() => {
+    if (!userId || !sessionId) return null;
+    return query(collection(db, "users", userId, "sessions", sessionId, "agent_logs"), orderBy("timestamp", "desc"));
+  }, [db, userId, sessionId]);
+
   const {
     data: logs,
     isLoading,
     error,
-  } = useFirestoreSubscription<AgentLogStep>(
-    userId && sessionId ? ["users", userId, "sessions", sessionId, "agent_logs"] : [],
-    "timestamp",
-    "desc",
-    20
-  );
+  } = useCollection<AgentLogStep>(logsQuery);
 
   if (isLoading) return <ViewerSkeleton />;
   if (error) return <EmptyState message="Error loading logs." />;
-  if (logs.length === 0) return <EmptyState message="No logs yet." />;
+  if (!logs || logs.length === 0) return <EmptyState message="No logs yet." />;
 
   return (
     <Accordion type="single" collapsible className="w-full">
@@ -86,19 +89,21 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
 }
 
 export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, userId: string }) {
+  const db = useFirestore();
+  const factsQuery = useMemoFirebase(() => {
+    if (!userId || !sessionId) return null;
+    return query(collection(db, "users", userId, "sessions", sessionId, "agent_memory"), orderBy("createdAt", "desc"));
+  }, [db, userId, sessionId]);
+
   const {
     data: facts,
     isLoading,
     error,
-  } = useFirestoreSubscription<AgentMemoryFact>(
-    userId && sessionId ? ["users", userId, "sessions", sessionId, "agent_memory"] : [],
-    "createdAt",
-    "desc"
-  );
+  } = useCollection<AgentMemoryFact>(factsQuery);
 
   if (isLoading) return <ViewerSkeleton />;
   if (error) return <EmptyState message="Error loading memory." />;
-  if (facts.length === 0) return <EmptyState message="No memory facts yet." />;
+  if (!facts || facts.length === 0) return <EmptyState message="No memory facts yet." />;
 
   return (
     <div className="space-y-2">
@@ -122,15 +127,17 @@ export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, us
 }
 
 export function ToolMemoryViewer({ userId }: { userId: string }) {
+  const db = useFirestore();
+  const todosQuery = useMemoFirebase(() => {
+    if (!userId) return null;
+    return query(collection(db, "users", userId, "todos"), orderBy("createdAt", "desc"));
+  }, [db, userId]);
+
   const {
     data: todos,
     isLoading,
     error,
-  } = useFirestoreSubscription<TodoItem>(
-    userId ? ["users", userId, "todos"] : [],
-    "createdAt",
-    "desc"
-  );
+  } = useCollection<TodoItem>(todosQuery);
   
   // In a real app with more tools, you'd have a selector here.
   // For now, we'll just show the todo tool's memory.
@@ -143,8 +150,8 @@ export function ToolMemoryViewer({ userId }: { userId: string }) {
       <CardContent>
         {isLoading && <ViewerSkeleton />}
         {error && <EmptyState message="Error loading tool memory." />}
-        {!isLoading && !error && todos.length === 0 && <EmptyState message="No to-do items yet." />}
-        {todos.length > 0 && (
+        {!isLoading && !error && (!todos || todos.length === 0) && <EmptyState message="No to-do items yet." />}
+        {todos && todos.length > 0 && (
           <ul className="space-y-2">
             {todos.map(todo => (
               <li key={todo.id} className="text-sm flex items-center gap-2">
