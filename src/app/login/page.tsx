@@ -30,22 +30,27 @@ import { setDocumentNonBlocking } from '@/firebase';
 // It's designed to be called after any successful authentication event.
 const ensureUserDocument = async (db: any, user: User) => {
   const userDocRef = doc(db, 'users', user.uid);
-  const userDoc = await getDoc(userDocRef);
+  try {
+    const userDoc = await getDoc(userDocRef);
 
-  if (!userDoc.exists()) {
-    // User document doesn't exist, so let's create it.
-    setDocumentNonBlocking(
-      userDocRef,
-      {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        createdAt: serverTimestamp(),
-        isAnonymous: user.isAnonymous,
-      },
-      { merge: true }
-    );
+    if (!userDoc.exists()) {
+      // User document doesn't exist, so let's create it.
+      await setDoc(
+        userDocRef,
+        {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          createdAt: serverTimestamp(),
+          isAnonymous: user.isAnonymous,
+        },
+        { merge: true }
+      );
+    }
+  } catch (error) {
+    console.error("Error ensuring user document:", error);
+    // Optionally, handle this error more gracefully
   }
 };
 
