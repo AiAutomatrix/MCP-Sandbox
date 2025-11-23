@@ -37,18 +37,14 @@ export async function sendMessageAction(
       content: userMessage,
       timestamp: serverTimestamp(),
     };
-    await addDoc(
-      collection(db, "users", userId, "sessions", sessionId, "messages"),
-      userMessageData
-    );
+    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(userMessageData);
+
 
     // 2. Load memory for the session
     const memoryFacts: AgentMemoryFact[] = [];
-    const memoryQuery = query(
-      collection(db, "users", userId, "sessions", sessionId, "facts"),
-      orderBy("createdAt", "desc")
-    );
-    const memorySnapshot = await getDocs(memoryQuery);
+    const memoryQuery = db.collection(`users/${userId}/sessions/${sessionId}/facts`).orderBy("createdAt", "desc");
+    
+    const memorySnapshot = await memoryQuery.get();
     memorySnapshot.forEach((doc) => {
       memoryFacts.push(doc.data() as AgentMemoryFact);
     });
@@ -117,10 +113,8 @@ export async function sendMessageAction(
       content: responseContent,
       timestamp: serverTimestamp(),
     };
-    const docRef = await addDoc(
-      collection(db, "users", userId, "sessions", sessionId, "messages"),
-      assistantMessageData
-    );
+    const docRef = await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(assistantMessageData);
+
 
     revalidatePath("/");
 
@@ -130,7 +124,7 @@ export async function sendMessageAction(
     const errorMessage = "Sorry, something went wrong while processing your request.";
     // The path might be incorrect if the session doesn't exist, handle this gracefully.
     try {
-      await addDoc(collection(db, "users", userId, "sessions", sessionId, "messages"), {
+      await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
         role: "assistant",
         content: errorMessage,
         timestamp: serverTimestamp(),

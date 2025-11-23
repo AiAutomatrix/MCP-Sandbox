@@ -11,7 +11,8 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { initializeFirebase } from '@/firebase/server-init';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+
 
 const { firestore: db } = initializeFirebase();
 
@@ -46,13 +47,13 @@ const addTodo = ai.defineTool(
   },
   async ({ userId, text }) => {
     try {
-      const todosCollection = collection(db, 'users', userId, 'todos');
+      const todosCollection = db.collection(`users/${userId}/todos`);
       const todoData = {
         text,
         completed: false,
-        createdAt: serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       };
-      await addDoc(todosCollection, todoData);
+      await todosCollection.add(todoData);
       return {
         success: true,
         message: `Successfully added to-do item: "${text}"`,
