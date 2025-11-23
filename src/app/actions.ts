@@ -45,7 +45,7 @@ export async function sendMessageAction(
     // 2. Load memory for the session
     const memoryFacts: AgentMemoryFact[] = [];
     const memoryQuery = query(
-      collection(db, "users", userId, "sessions", sessionId, "agent_memory"),
+      collection(db, "users", userId, "sessions", sessionId, "facts"),
       orderBy("createdAt", "desc")
     );
     const memorySnapshot = await getDocs(memoryQuery);
