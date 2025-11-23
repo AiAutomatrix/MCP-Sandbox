@@ -45,6 +45,17 @@ export async function sendMessageAction(
     };
     const docRef = await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(assistantMessageData);
 
+    // 4. Create a log entry for the turn
+    const logStepData = {
+        timestamp: new Date(),
+        userMessage: userMessage,
+        finalResponse: responseContent,
+        reasoning: "Simple conversational response.", // Basic reasoning for non-tool turns
+        toolCalls: [],
+        toolResults: [],
+    };
+    await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add(logStepData);
+
 
     revalidatePath("/");
 
@@ -57,6 +68,13 @@ export async function sendMessageAction(
         role: "assistant",
         content: errorMessage,
         timestamp: new Date(),
+      });
+       // Also log the error turn
+      await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
+        timestamp: new Date(),
+        userMessage: userMessage,
+        finalResponse: errorMessage,
+        reasoning: `Error occurred: ${error instanceof Error ? error.message : String(error)}`,
       });
     } catch (dbError) {
        console.error("Error saving error message to Firestore:", dbError);
