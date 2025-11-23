@@ -35,7 +35,7 @@ export const db = admin.firestore();
 // Tool Definitions
 // -----------------------------
 
-export const mathEvaluator = ai.defineTool(
+const mathEvaluator = ai.defineTool(
   {
     name: 'mathEvaluator',
     description:
@@ -61,7 +61,7 @@ export const mathEvaluator = ai.defineTool(
   }
 );
 
-export const todoTool = ai.defineTool(
+const todoTool = ai.defineTool(
   {
     name: 'todoTool',
     description:
