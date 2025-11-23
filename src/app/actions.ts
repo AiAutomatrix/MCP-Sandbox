@@ -128,11 +128,16 @@ export async function sendMessageAction(
   } catch (error) {
     console.error("Error in sendMessageAction:", error);
     const errorMessage = "Sorry, something went wrong while processing your request.";
-    await addDoc(collection(db, "users", userId, "sessions", sessionId, "messages"), {
-      role: "assistant",
-      content: errorMessage,
-      timestamp: serverTimestamp(),
-    });
+    // The path might be incorrect if the session doesn't exist, handle this gracefully.
+    try {
+      await addDoc(collection(db, "users", userId, "sessions", sessionId, "messages"), {
+        role: "assistant",
+        content: errorMessage,
+        timestamp: serverTimestamp(),
+      });
+    } catch (dbError) {
+       console.error("Error saving error message to Firestore:", dbError);
+    }
     revalidatePath("/");
     return { id: "error", role: "assistant", content: errorMessage };
   }
