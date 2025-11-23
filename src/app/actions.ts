@@ -8,6 +8,7 @@ import {
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
 import { FieldValue } from 'firebase-admin/firestore';
+import type { AgentMemoryFact } from '@/lib/types';
 
 const { firestore: db } = initializeFirebase();
 
@@ -86,47 +87,68 @@ export async function sendMessageAction(
 
   try {
     // 1. Save user message to Firestore
-    const userMessageData = {
-      role: 'user',
-      content: userMessage,
-      timestamp: FieldValue.serverTimestamp(),
-    };
     await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
-      .add(userMessageData);
+      .add({
+        role: 'user',
+        content: userMessage,
+        timestamp: FieldValue.serverTimestamp(),
+      });
 
-    // 2. Call the simplified Genkit flow
+    // 2. Fetch existing memory
+    const factsSnapshot = await db
+      .collection(`users/${userId}/sessions/${sessionId}/facts`)
+      .orderBy('createdAt', 'asc')
+      .get();
+    const memory = factsSnapshot.docs
+      .map((doc) => (doc.data() as AgentMemoryFact).text)
+      .filter((text) => text); // Filter out any empty/undefined text
+
+    // 3. Call the Genkit flow with message and memory
     const flowInput: GenerateResponseInput = {
       userMessage,
+      memory,
     };
 
     const flowOutput = await generateResponse(flowInput);
-
     const responseContent =
       flowOutput.response || "Sorry, I couldn't come up with a response.";
 
-    // 3. Save assistant message to Firestore
-    const assistantMessageData = {
-      role: 'assistant',
-      content: responseContent,
-      timestamp: FieldValue.serverTimestamp(),
-    };
+    // 4. Save assistant message to Firestore
     const docRef = await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
-      .add(assistantMessageData);
+      .add({
+        role: 'assistant',
+        content: responseContent,
+        timestamp: FieldValue.serverTimestamp(),
+      });
 
-    // 4. Create a log entry for the turn
-    const logStepData = {
+    // 5. Create a log entry for the turn
+    await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
       timestamp: FieldValue.serverTimestamp(),
       userMessage: userMessage,
       finalResponse: responseContent,
-      reasoning: 'Simple conversational response.', // Basic reasoning for non-tool turns
+      reasoning: flowOutput.reasoning || 'No reasoning provided.',
       toolCalls: [],
       toolResults: [],
-    };
-    await db
-      .collection(`users/${userId}/sessions/${sessionId}/steps`)
-      .add(logStepData);
+    });
+
+    // 6. Save new facts to memory, if any
+    if (flowOutput.newFacts && flowOutput.newFacts.length > 0) {
+      const batch = db.batch();
+      const factsCollection = db.collection(
+        `users/${userId}/sessions/${sessionId}/facts`
+      );
+      flowOutput.newFacts.forEach((factText) => {
+        const newFactRef = factsCollection.doc();
+        batch.set(newFactRef, {
+          text: factText,
+          createdAt: FieldValue.serverTimestamp(),
+          source: 'agent',
+        });
+      });
+      await batch.commit();
+    }
 
     revalidatePath('/');
 
@@ -143,7 +165,6 @@ export async function sendMessageAction(
           content: errorMessage,
           timestamp: FieldValue.serverTimestamp(),
         });
-      // Also log the error turn
       await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
         timestamp: FieldValue.serverTimestamp(),
         userMessage: userMessage,
