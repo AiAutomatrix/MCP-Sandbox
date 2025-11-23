@@ -11,7 +11,7 @@ import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 
 // Input schema: What the flow receives.
-export const GenerateResponseInputSchema = z.object({
+const GenerateResponseInputSchema = z.object({
   userMessage: z.string().describe('The message sent by the user.'),
   memory: z
     .array(z.string())
@@ -22,7 +22,7 @@ export const GenerateResponseInputSchema = z.object({
 export type GenerateResponseInput = z.infer<typeof GenerateResponseInputSchema>;
 
 // Output schema: What the flow returns.
-export const GenerateResponseOutputSchema = z.object({
+const GenerateResponseOutputSchema = z.object({
   finalResponse: z.string().describe("The agent's final response to the user."),
   reasoning: z
     .string()
