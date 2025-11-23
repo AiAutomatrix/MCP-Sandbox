@@ -1,0 +1,140 @@
+/**
+ * Core Philosophy: This ruleset enforces a strict user-ownership model for all data.
+ * Every piece of data, including agent logs, memory, and tool data, is considered private
+ * and accessible only to the user who created it. Access is granted based on an `ownerId`
+ * field that is expected to be present on every document.
+ *
+ * Data Structure: Data is organized into top-level collections like `agent_logs`,
+ * `agent_memory`, and `tool_memory`. These collections act as namespaces, with data
+ * further segregated by session ID or tool name. This structure avoids nesting all data
+ * under a single `/users/{userId}` path, but requires careful denormalization for security.
+ *
+ * Key Security Decisions:
+ * - Strict Ownership: All operations (`get`, `create`, `update`, `delete`) are gated by
+ *   an ownership check. The user's authenticated UID must match the `ownerId` field on
+ *   the document.
+ * - Missing Ownership Field Assumption: The provided data schemas for AgentLogStep,
+ *   AgentMemoryFact, and ToolData are missing a critical `ownerId` field. These rules
+ *   are written with the assumption that this field WILL be added to every document.
+ *   This is a secure-by-default approach that will fail until the data model is corrected.
+ * - No Public Listing: Listing documents across different sessions or tools (e.g., querying
+ *   the root `tool_memory` collection) is explicitly disallowed. The current data structure
+ *   does not support secure, server-side filtering for list operations without compromising
+ *   security or performance.
+ *
+ * Denormalization for Authorization: To ensure fast and secure rule evaluation, these rules
+ * depend on denormalization.
+ * - `ownerId`: An `ownerId` field (containing the user's UID) must be stored on every single
+ *   document (`AgentLogStep`, `AgentMemoryFact`, `ToolData`). This avoids costly `get()` calls
+ *   to check ownership on parent documents.
+ * - Relational IDs: Fields like `sessionId` and `toolName` are expected to be on the documents
+ *   to enforce consistency with the document's path.
+ *
+ * Structural Segregation: The data model correctly segregates data into different
+ * collections based on function (logs, memory, tools), which simplifies rule logic.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions for readability and reusability.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Checks if the requesting user is the owner of a given document.
+    // Relies on a denormalized `ownerId` field on the document.
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * @description Placeholder path for agent log steps. Direct access to this
+     * document is denied. It only serves to group the `steps` subcollection.
+     * @path /agent_logs/{sessionId}
+     * @allow None. A user trying to read or write this document directly will be denied.
+     * @deny Any client-side read or write to `/agent_logs/some_session_id`.
+     * @principle Prevents direct manipulation of grouping documents that have no defined schema.
+     */
+    match /agent_logs/{sessionId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Secures individual log steps within an agent session. Only the
+     * owner of the session can manage these logs.
+     * @path /agent_logs/{sessionId}/steps/{stepId}
+     * @allow (create) An authenticated user creating a log step for their own session.
+     * @deny (get) A user trying to read a log step from another user's session.
+     * @deny (list) Any user trying to list all steps in a session, as this cannot be securely filtered.
+     * @principle Enforces document ownership and relational integrity between path and document data.
+     */
+    match /agent_logs/{sessionId}/steps/{stepId} {
+      // CRITICAL: The 'AgentLogStep' entity is missing an 'ownerId' field.
+      // These rules assume you will add `ownerId: request.auth.uid` to every document.
+      allow get: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow list: if false; // Denied: Path does not contain owner info, making secure listing impossible without a 'get'.
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid && request.resource.data.sessionId == sessionId;
+      allow update: if isSignedIn() && resource != null && isOwner(resource.data.ownerId) && request.resource.data.ownerId == resource.data.ownerId && request.resource.data.sessionId == resource.data.sessionId;
+      allow delete: if isSignedIn() && resource != null && isOwner(resource.data.ownerId);
+    }
+
+    /**
+     * @description Placeholder path for agent memory facts. Direct access to this
+     * document is denied. It only serves to group the `facts` subcollection.
+     * @path /agent_memory/{sessionId}
+     * @allow None. A user trying to read or write this document directly will be denied.
+     * @deny Any client-side read or write to `/agent_memory/some_session_id`.
+     * @principle Prevents direct manipulation of grouping documents that have no defined schema.
+     */
+    match /agent_memory/{sessionId} {
+      allow get: if false;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Secures individual memory facts within an agent session. Only the
+     * owner of the session can manage these facts.
+     * @path /agent_memory/{sessionId}/facts/{factId}
+     * @allow (create) An authenticated user creating a memory fact for their own session.
+     * @deny (get) A user trying to read a memory fact from another user's session.
+     * @deny (list) Any user trying to list all facts in a session, as this cannot be securely filtered.
+     * @principle Enforces document ownership and relational integrity between path and document data.
+     */
+    match /agent_memory/{sessionId}/facts/{factId} {
+      // CRITICAL: The 'AgentMemoryFact' entity is missing an 'ownerId' field.
+      // These rules assume you will add `ownerId: request.auth.uid` to every document.
+      allow get: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow list: if false; // Denied: Path does not contain owner info, making secure listing impossible without a 'get'.
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid && request.resource.data.sessionId == sessionId;
+      allow update: if isSignedIn() && resource != null && isOwner(resource.data.ownerId) && request.resource.data.ownerId == resource.data.ownerId && request.resource.data.sessionId == resource.data.sessionId;
+      allow delete: if isSignedIn() && resource != null && isOwner(resource.data.ownerId);
+    }
+
+    /**
+     * @description Secures data generated by a specific tool. Access is restricted to the
+     * user who owns the data.
+     * @path /tool_memory/{toolName}/{dataId}
+     * @allow (create) An authenticated user creating a tool data document they own.
+     * @deny (get) A user trying to read tool data created by another user.
+     * @deny (list) Any user trying to list the contents of the `/tool_memory` collection.
+     * @principle Enforces document ownership for all operations and validates relational integrity.
+     */
+    match /tool_memory/{toolName}/{dataId} {
+      // CRITICAL: The 'ToolData' entity is missing an 'ownerId' field.
+      // These rules assume you will add `ownerId: request.auth.uid` to every document.
+      allow get: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow list: if false; // Denied: Listing a top-level collection containing private user data is insecure.
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid && request.resource.data.toolName == toolName;
+      allow update: if isSignedIn() && resource != null && isOwner(resource.data.ownerId) && request.resource.data.ownerId == resource.data.ownerId && request.resource.data.toolName == resource.data.toolName;
+      allow delete: if isSignedIn() && resource != null && isOwner(resource.data.ownerId);
+    }
+  }
+}
