@@ -1,3 +1,4 @@
+
 // src/ai/flows/generate-response-with-tools.ts
 'use server';
 
@@ -49,23 +50,29 @@ const generateResponsePrompt = ai.definePrompt({
   prompt: `You are a helpful assistant. Your goal is to provide a useful response to the user's message.
 
 You have access to the following tools:
+{{#if toolDescriptors}}
 {{#each toolDescriptors}}
 - {{name}}: {{description}}
 {{/each}}
+{{else}}
+No tools available.
+{{/if}}
 
 You also have access to the following memory facts from the user's session:
+{{#if memoryFacts}}
 {{#each memoryFacts}}
 - {{this}}
 {{/each}}
+{{/if}}
 
 Here is the user's message: {{{userMessage}}}
 
-Please follow these instructions:
-1.  If the user's message is a simple greeting or question (e.g., "hello", "how are you?"), provide a friendly, conversational response.
-2.  If the user's message requires information or an action that a tool can provide, you MUST use the appropriate tool.
-3.  If the user's message does not require a tool, provide a helpful response based on the conversation history and memory facts.
-4.  Your final response should be clear, concise, and directly address the user's message.
-`, //End prompt
+Follow these instructions:
+1.  Analyze the user's message.
+2.  If the message requires an action that a tool can perform, you MUST use the appropriate tool. Your response should consist ONLY of the tool call.
+3.  If the message is a greeting, question, or statement that does not require a tool, provide a direct, conversational answer in the 'finalResponse' field.
+4.  If you do not use a tool, your response MUST include a 'finalResponse' field.
+`,
 });
 
 // Define the flow

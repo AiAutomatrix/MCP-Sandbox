@@ -76,18 +76,16 @@ export async function sendMessageAction(
       toolDescriptors,
     };
 
-    const { finalResponse, toolCalls } = await generateResponseWithTools(
-      flowInput
-    );
-
+    const flowOutput = await generateResponseWithTools(flowInput);
+    
     let responseContent = "";
 
-    // Main logic fix: Prioritize direct response, then handle tools.
-    if (finalResponse) {
-      responseContent = finalResponse;
-    } else if (toolCalls && toolCalls.length > 0) {
+    // 5. Determine response based on flow output
+    if (flowOutput.finalResponse) {
+      responseContent = flowOutput.finalResponse;
+    } else if (flowOutput.toolCalls && flowOutput.toolCalls.length > 0) {
       let toolResponseMessages = "";
-      for (const toolCall of toolCalls) {
+      for (const toolCall of flowOutput.toolCalls) {
         if (toolCall.name === 'addTodo') {
           const result = await addTodoItem({ sessionId: `${userId}:${sessionId}`, item: toolCall.arguments.text });
           toolResponseMessages += result.message + "\n";
@@ -101,11 +99,11 @@ export async function sendMessageAction(
     
     // Fallback if no response could be determined
     if (!responseContent) {
-      responseContent = "I don't have a specific response for that. Please try rephrasing your request.";
+      responseContent = "I'm not sure how to respond to that. Can you try rephrasing?";
     }
 
 
-    // 5. Save assistant message to Firestore
+    // 6. Save assistant message to Firestore
     const assistantMessageData = {
       role: "assistant",
       content: responseContent,
