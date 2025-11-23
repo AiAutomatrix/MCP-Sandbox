@@ -4,17 +4,20 @@ import {
   generateResponseWithTools,
   GenerateResponseWithToolsInput,
 } from "@/ai/flows/generate-response-with-tools";
-import { db } from "@/lib/firebase";
+import { app } from "@/lib/firebase";
 import { AgentMemoryFact, ChatMessage } from "@/lib/types";
 import {
   addDoc,
   collection,
   getDocs,
+  getFirestore,
   orderBy,
   query,
   serverTimestamp,
 } from "firebase/firestore";
 import { revalidatePath } from "next/cache";
+
+const db = getFirestore(app);
 
 export async function sendMessageAction(
   sessionId: string,

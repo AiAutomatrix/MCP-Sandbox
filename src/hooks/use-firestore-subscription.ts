@@ -10,7 +10,7 @@ import {
   DocumentData,
   limit,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { useFirebase } from "@/firebase/provider";
 
 export function useFirestoreSubscription<T>(
   collectionPath: string[],
@@ -18,6 +18,7 @@ export function useFirestoreSubscription<T>(
   orderDirection: "asc" | "desc" = "asc",
   docLimit: number = 100
 ) {
+  const { db } = useFirebase();
   const [data, setData] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -58,7 +59,7 @@ export function useFirestoreSubscription<T>(
     );
 
     return () => unsubscribe();
-  }, [collectionPath.join('/'), orderField, orderDirection, docLimit]);
+  }, [db, collectionPath.join('/'), orderField, orderDirection, docLimit]);
 
   return { data, isLoading, error };
 }
