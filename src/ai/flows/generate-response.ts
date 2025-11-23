@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * generate-response-with-tools.ts
@@ -238,23 +237,11 @@ const generateResponseFlow = ai.defineFlow(
           };
         }
 
-        // Execute the tool via ai.runTool (preferred) or call the defined function
-        // NOTE: depending on your genkit runtime, you might call \`ai.runTool(tool, input)\` instead.
-        // Here we invoke the underlying tool handler by calling \`tool.run\` if available, otherwise
-        // call via ai.runTool (try both).
         let toolResult: any;
         try {
-          // If the tool object exposes a .run or similar runtime API, prefer using ai.runTool
-          // Fallback: call via ai.runTool with the tool's name.
-          if (typeof ai.runTool === 'function') {
-            // @ts-ignore runtime call
-            toolResult = await ai.runTool(tr.name, tr.input ?? {});
-          } else {
-            // Fallback: call the tool function directly (works if tool is a function)
-            // Many SDKs return an object wrapper; if the tool has \`__run\` or similar, you'd use that.
-            // As a conservative approach we attempt to call (tool as any)(tr.input)
-            toolResult = await (tool as any)(tr.input ?? {});
-          }
+          // The 'tool' variable is the actual awaitable tool function defined with `ai.defineTool`.
+          // We can call it directly with the input provided by the model.
+          toolResult = await tool(tr.input ?? {});
         } catch (err: any) {
           toolResult = { error: err?.message ?? String(err) };
         }
@@ -295,5 +282,3 @@ const generateResponseFlow = ai.defineFlow(
     };
   }
 );
-
-    
