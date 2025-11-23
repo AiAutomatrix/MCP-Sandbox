@@ -34,7 +34,7 @@ const ensureUserDocument = async (db: any, user: User) => {
   const userDocRef = doc(db, 'users', user.uid);
 
   try {
-    // We use a transaction to ensure both the user doc and their initial session are created together.
+    // We use a transaction to ensure all initial documents are created atomically.
     await runTransaction(db, async (transaction) => {
       const userDoc = await transaction.get(userDocRef);
 
@@ -50,30 +50,38 @@ const ensureUserDocument = async (db: any, user: User) => {
         });
 
         // 2. Create the initial Session Document
-        // We'll generate a new session ID here and save it to localStorage for the app to use.
         const newSessionId = uuidv4();
         const sessionDocRef = doc(db, 'users', user.uid, 'sessions', newSessionId);
         transaction.set(sessionDocRef, {
           createdAt: serverTimestamp(),
           userId: user.uid,
         });
+
+        // 3. Create initial empty subcollections for the session
+        const initialStepRef = doc(collection(db, 'users', user.uid, 'sessions', newSessionId, 'steps'), 'initial');
+        transaction.set(initialStepRef, {
+            createdAt: serverTimestamp(),
+            userMessage: 'Initial session created.',
+        });
+
+        const initialFactRef = doc(collection(db, 'users', user.uid, 'sessions', newSessionId, 'facts'), 'initial');
+        transaction.set(initialFactRef, {
+            createdAt: serverTimestamp(),
+            text: 'User session initialized.',
+            source: 'agent'
+        });
         
-        // 3. Store the new session ID in localStorage
-        // This ensures the main app picks up the session we just created.
+        // 4. Store the new session ID in localStorage
         try {
            const sessionKey = `${SESSION_KEY_PREFIX}${user.uid}`;
            localStorage.setItem(sessionKey, newSessionId);
         } catch (e) {
-          // If localStorage fails, the app will create a new session ID on the next page load,
-          // which is a safe fallback.
           console.warn("Could not set session ID in localStorage from login page:", e);
         }
       }
     });
   } catch (error) {
     console.error("Error ensuring user and session documents in transaction:", error);
-    // This is a critical failure, we should inform the user.
-    // In a real app, you might want to sign the user out here.
     throw new Error("Failed to initialize your user profile. Please try again.");
   }
 };
@@ -244,3 +252,5 @@ export default function AuthPage() {
     </div>
   );
 }
+
+    
