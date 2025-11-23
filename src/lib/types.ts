@@ -1,3 +1,4 @@
+
 import type { Timestamp } from "firebase/firestore";
 
 export interface ChatMessage {
@@ -13,7 +14,7 @@ export interface AgentLogStep {
   userMessage: string;
   modelResponse?: string;
   reasoning?: string;
-  toolCalls?: { name: string; arguments: any }[];
+  toolCalls?: { name: string; input: any }[];
   toolResults?: any[];
   finalResponse?: string;
 }
@@ -31,3 +32,5 @@ export interface TodoItem {
   completed: boolean;
   createdAt: Timestamp;
 }
+
+    

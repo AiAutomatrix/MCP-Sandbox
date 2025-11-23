@@ -102,15 +102,17 @@ export async function sendMessageAction(
       .get();
     const memory = factsSnapshot.docs
       .map((doc) => (doc.data() as AgentMemoryFact).text)
-      .filter((text) => text); // Filter out any empty/undefined text
+      .filter((text) => text);
 
     // 3. Call the Genkit flow with message and memory
     const flowInput: GenerateResponseInput = {
       userMessage,
       memory,
     };
-
+    
+    // The generateResponse flow now handles the tool loop internally.
     const flowOutput = await generateResponse(flowInput);
+
     const responseContent =
       flowOutput.response || "Sorry, I couldn't come up with a response.";
 
@@ -123,14 +125,16 @@ export async function sendMessageAction(
         timestamp: FieldValue.serverTimestamp(),
       });
 
-    // 5. Create a log entry for the turn
+    // 5. Create a log entry for the turn.
+    // The flow output from the tool-enabled flow contains everything we need.
     await db.collection(`users/${userId}/sessions/${sessionId}/steps`).add({
       timestamp: FieldValue.serverTimestamp(),
       userMessage: userMessage,
-      finalResponse: responseContent,
       reasoning: flowOutput.reasoning || 'No reasoning provided.',
-      toolCalls: [],
-      toolResults: [],
+      // The new flow includes these fields directly
+      toolCalls: flowOutput.toolRequest ? [flowOutput.toolRequest] : [], 
+      toolResults: flowOutput.toolResponse ? [flowOutput.toolResponse] : [],
+      finalResponse: responseContent,
     });
 
     // 6. Save new facts to memory, if any
@@ -172,6 +176,8 @@ export async function sendMessageAction(
         reasoning: `Error occurred: ${
           error instanceof Error ? error.message : String(error)
         }`,
+        toolCalls: [],
+        toolResults: [],
       });
     } catch (dbError) {
       console.error('Error saving error message to Firestore:', dbError);
@@ -180,3 +186,5 @@ export async function sendMessageAction(
     return { id: 'error', role: 'assistant', content: errorMessage };
   }
 }
+
+    
