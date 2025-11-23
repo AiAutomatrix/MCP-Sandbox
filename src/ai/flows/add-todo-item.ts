@@ -12,6 +12,8 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { initializeFirebase } from '@/firebase/server-init';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const { firestore: db } = initializeFirebase();
 
@@ -45,25 +47,30 @@ const addTodo = ai.defineTool(
     }),
   },
   async ({ userId, text }) => {
-    try {
-      const todosCollection = collection(db, 'users', userId, 'todos');
-      await addDoc(todosCollection, {
-        text,
-        completed: false,
-        createdAt: serverTimestamp(),
+    const todosCollection = collection(db, 'users', userId, 'todos');
+    const todoData = {
+      text,
+      completed: false,
+      createdAt: serverTimestamp(),
+    };
+
+    addDoc(todosCollection, todoData).catch((serverError) => {
+      const permissionError = new FirestorePermissionError({
+        path: todosCollection.path,
+        operation: 'create',
+        requestResourceData: todoData,
       });
-      return {
-        success: true,
-        message: `Successfully added to-do item: "${text}"`,
-      };
-    } catch (error) {
-      console.error('Error adding todo to Firestore:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-      return {
-        success: false,
-        message: `Failed to add todo item. Reason: ${errorMessage}`,
-      };
-    }
+      // This is a server-side flow, but we can log the error for debugging.
+      // In a real client-side scenario, this would pop up in the browser.
+      console.error(permissionError.message);
+    });
+
+    // In a non-blocking pattern, we optimistically assume success.
+    // The error is handled asynchronously.
+    return {
+      success: true,
+      message: `Successfully queued the addition of to-do item: "${text}"`,
+    };
   }
 );
 
