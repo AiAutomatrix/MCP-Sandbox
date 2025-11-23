@@ -80,9 +80,12 @@ export async function sendMessageAction(
       flowInput
     );
 
-    let responseContent = finalResponse;
+    let responseContent = "";
 
-    if (toolCalls && toolCalls.length > 0) {
+    // Main logic fix: Prioritize direct response, then handle tools.
+    if (finalResponse) {
+      responseContent = finalResponse;
+    } else if (toolCalls && toolCalls.length > 0) {
       let toolResponseMessages = "";
       for (const toolCall of toolCalls) {
         if (toolCall.name === 'addTodo') {
@@ -96,8 +99,9 @@ export async function sendMessageAction(
       responseContent = toolResponseMessages.trim();
     }
     
+    // Fallback if no response could be determined
     if (!responseContent) {
-      responseContent = "I don't have a specific response for that, but I've processed your request.";
+      responseContent = "I don't have a specific response for that. Please try rephrasing your request.";
     }
 
 
