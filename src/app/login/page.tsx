@@ -24,7 +24,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Chrome } from 'lucide-react';
-import { setDocumentNonBlocking } from '@/firebase';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 // This function checks for and creates a user document in Firestore.
 // It's designed to be called after any successful authentication event.
@@ -34,8 +34,8 @@ const ensureUserDocument = async (db: any, user: User) => {
     const userDoc = await getDoc(userDocRef);
 
     if (!userDoc.exists()) {
-      // User document doesn't exist, so let's create it.
-      await setDoc(
+      // User document doesn't exist, so let's create it non-blockingly.
+      setDocumentNonBlocking(
         userDocRef,
         {
           uid: user.uid,
