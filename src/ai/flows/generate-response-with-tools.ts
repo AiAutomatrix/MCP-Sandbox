@@ -46,25 +46,26 @@ const generateResponsePrompt = ai.definePrompt({
   name: 'generateResponsePrompt',
   input: { schema: GenerateResponseWithToolsInputSchema },
   output: { schema: GenerateResponseWithToolsOutputSchema },
-  prompt: `You are a helpful assistant that can use tools to answer the user's questions.
+  prompt: `You are a helpful assistant. Your goal is to provide a useful response to the user's message.
 
-  You have access to the following tools:
-  {{#each toolDescriptors}}
-    - {{name}}: {{description}}
-  {{/each}}
+You have access to the following tools:
+{{#each toolDescriptors}}
+- {{name}}: {{description}}
+{{/each}}
 
-  You should use the tools if the user's question requires it.
+You also have access to the following memory facts from the user's session:
+{{#each memoryFacts}}
+- {{this}}
+{{/each}}
 
-  Here are some memory facts about the user's session:
-  {{#each memoryFacts}}
-    - {{this}}
-  {{/each}}
+Here is the user's message: {{{userMessage}}}
 
-  Now, respond to the following user message: {{{userMessage}}}
-
-  Remember to think step by step, and write facts to memory as you learn new things.
-  If the user asks you to do something (e.g. add a todo), use a tool to do it.
-  `, //End prompt
+Please follow these instructions:
+1.  If the user's message is a simple greeting or question (e.g., "hello", "how are you?"), provide a friendly, conversational response.
+2.  If the user's message requires information or an action that a tool can provide, you MUST use the appropriate tool.
+3.  If the user's message does not require a tool, provide a helpful response based on the conversation history and memory facts.
+4.  Your final response should be clear, concise, and directly address the user's message.
+`, //End prompt
 });
 
 // Define the flow

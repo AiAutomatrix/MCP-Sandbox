@@ -47,9 +47,7 @@ const prompt = ai.definePrompt({
   name: 'getRandomFactPrompt',
   input: {schema: GetRandomFactInputSchema},
   output: {schema: GetRandomFactOutputSchema},
-  prompt: `{{#tool_use}}
-  I want you to call the \"randomFactTool\" to get a random fact.  Return that fact to me.
-  {{/tool_use}}`,
+  prompt: `Use the randomFactTool to get a random fact.`,
   tools: [randomFactTool],
 });
 
@@ -60,6 +58,9 @@ const getRandomFactFlow = ai.defineFlow(
     outputSchema: GetRandomFactOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input, {tool_use: true});
-    return {fact: output!.fact}} // tool should return a string but prompt asks for a fact object
+    const {output} = await prompt(input);
+    // The tool returns a string, but the output schema expects an object { fact: "..." }
+    // The model automatically maps the tool's string output to the 'fact' field.
+    return output!;
+  }
 );
