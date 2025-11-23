@@ -6,14 +6,6 @@ import {
   GenerateResponseWithToolsInput,
 } from "@/ai/flows/generate-response-with-tools";
 import { AgentMemoryFact } from "@/lib/types";
-import {
-  addDoc,
-  collection,
-  getDocs,
-  orderBy,
-  query,
-  serverTimestamp,
-} from "firebase/firestore";
 import { revalidatePath } from "next/cache";
 import { initializeFirebase } from "@/firebase/server-init";
 import { addTodoItem } from "@/ai/flows/add-todo-item";
@@ -35,7 +27,7 @@ export async function sendMessageAction(
     const userMessageData = {
       role: "user",
       content: userMessage,
-      timestamp: serverTimestamp(),
+      timestamp: new Date(),
     };
     await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(userMessageData);
 
@@ -46,7 +38,9 @@ export async function sendMessageAction(
     
     const memorySnapshot = await memoryQuery.get();
     memorySnapshot.forEach((doc) => {
-      memoryFacts.push(doc.data() as AgentMemoryFact);
+      if (doc.id !== 'initial') {
+        memoryFacts.push(doc.data() as AgentMemoryFact);
+      }
     });
 
     // 3. Define tool descriptors
@@ -111,7 +105,7 @@ export async function sendMessageAction(
     const assistantMessageData = {
       role: "assistant",
       content: responseContent,
-      timestamp: serverTimestamp(),
+      timestamp: new Date(),
     };
     const docRef = await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(assistantMessageData);
 
@@ -122,12 +116,11 @@ export async function sendMessageAction(
   } catch (error) {
     console.error("Error in sendMessageAction:", error);
     const errorMessage = "Sorry, something went wrong while processing your request.";
-    // The path might be incorrect if the session doesn't exist, handle this gracefully.
     try {
       await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
         role: "assistant",
         content: errorMessage,
-        timestamp: serverTimestamp(),
+        timestamp: new Date(),
       });
     } catch (dbError) {
        console.error("Error saving error message to Firestore:", dbError);

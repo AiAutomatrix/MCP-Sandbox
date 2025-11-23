@@ -44,11 +44,11 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
 
   if (isLoading) return <ViewerSkeleton />;
   if (error) return <EmptyState message="Error loading logs." />;
-  if (!logs || logs.length === 0) return <EmptyState message="No logs yet." />;
+  if (!logs || logs.length === 0 || (logs.length === 1 && logs[0].id === 'initial')) return <EmptyState message="No logs yet." />;
 
   return (
     <Accordion type="single" collapsible className="w-full">
-      {logs.map((log) => (
+      {logs.filter(log => log.id !== 'initial').map((log) => (
         <AccordionItem value={log.id} key={log.id}>
           <AccordionTrigger className="text-sm text-left hover:no-underline">
             <div className="flex flex-col gap-1">
@@ -103,11 +103,11 @@ export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, us
 
   if (isLoading) return <ViewerSkeleton />;
   if (error) return <EmptyState message="Error loading memory." />;
-  if (!facts || facts.length === 0) return <EmptyState message="No memory facts yet." />;
+  if (!facts || facts.length === 0 || (facts.length === 1 && facts[0].id === 'initial')) return <EmptyState message="No memory facts yet." />;
 
   return (
     <div className="space-y-2">
-      {facts.map((fact) => (
+      {facts.filter(fact => fact.id !== 'initial').map((fact) => (
         <Card key={fact.id} className="bg-background">
           <CardContent className="p-3 text-sm">
             <p>{fact.text}</p>
@@ -166,5 +166,4 @@ export function ToolMemoryViewer({ userId }: { userId: string }) {
     </Card>
   );
 }
-
     
