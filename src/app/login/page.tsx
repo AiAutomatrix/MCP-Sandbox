@@ -10,7 +10,7 @@ import {
   signInWithPopup,
   User,
 } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,33 +24,57 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Chrome } from 'lucide-react';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { v4 as uuidv4 } from 'uuid';
 
-// This function checks for and creates a user document in Firestore.
+const SESSION_KEY_PREFIX = "gemini_sandbox_session_id_";
+
+// This function checks for and creates a user document and their initial session in Firestore.
 // It's designed to be called after any successful authentication event.
 const ensureUserDocument = async (db: any, user: User) => {
   const userDocRef = doc(db, 'users', user.uid);
-  try {
-    const userDoc = await getDoc(userDocRef);
 
-    if (!userDoc.exists()) {
-      // User document doesn't exist, so let's create it non-blockingly.
-      setDocumentNonBlocking(
-        userDocRef,
-        {
+  try {
+    // We use a transaction to ensure both the user doc and their initial session are created together.
+    await runTransaction(db, async (transaction) => {
+      const userDoc = await transaction.get(userDocRef);
+
+      if (!userDoc.exists()) {
+        // 1. Create the User Document
+        transaction.set(userDocRef, {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
           createdAt: serverTimestamp(),
           isAnonymous: user.isAnonymous,
-        },
-        { merge: true }
-      );
-    }
+        });
+
+        // 2. Create the initial Session Document
+        // We'll generate a new session ID here and save it to localStorage for the app to use.
+        const newSessionId = uuidv4();
+        const sessionDocRef = doc(db, 'users', user.uid, 'sessions', newSessionId);
+        transaction.set(sessionDocRef, {
+          createdAt: serverTimestamp(),
+          userId: user.uid,
+        });
+        
+        // 3. Store the new session ID in localStorage
+        // This ensures the main app picks up the session we just created.
+        try {
+           const sessionKey = `${SESSION_KEY_PREFIX}${user.uid}`;
+           localStorage.setItem(sessionKey, newSessionId);
+        } catch (e) {
+          // If localStorage fails, the app will create a new session ID on the next page load,
+          // which is a safe fallback.
+          console.warn("Could not set session ID in localStorage from login page:", e);
+        }
+      }
+    });
   } catch (error) {
-    console.error("Error ensuring user document:", error);
-    // Optionally, handle this error more gracefully
+    console.error("Error ensuring user and session documents in transaction:", error);
+    // This is a critical failure, we should inform the user.
+    // In a real app, you might want to sign the user out here.
+    throw new Error("Failed to initialize your user profile. Please try again.");
   }
 };
 
@@ -65,15 +89,19 @@ export default function AuthPage() {
   const { toast } = useToast();
 
   const handleAuthSuccess = async (user: User) => {
-    await ensureUserDocument(db, user);
-    router.push('/');
-    toast({
-      title: 'Success!',
-      description: 'You are now logged in.',
-    });
+    try {
+      await ensureUserDocument(db, user);
+      router.push('/');
+      toast({
+        title: 'Success!',
+        description: 'You are now logged in.',
+      });
+    } catch (error: any) {
+       handleAuthError(error, 'User Profile Creation');
+    }
   };
 
-  const handleAuthError = (error: any, action: 'login' | 'signup' | 'google') => {
+  const handleAuthError = (error: any, action: string) => {
     toast({
       variant: 'destructive',
       title: `Authentication failed`,
