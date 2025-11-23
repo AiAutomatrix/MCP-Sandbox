@@ -2,14 +2,11 @@
 "use server";
 
 import {
-  generateResponseWithTools,
-  GenerateResponseWithToolsInput,
-} from "@/ai/flows/generate-response-with-tools";
-import { AgentMemoryFact } from "@/lib/types";
+  generateResponse,
+  GenerateResponseInput,
+} from "@/ai/flows/generate-response";
 import { revalidatePath } from "next/cache";
 import { initializeFirebase } from "@/firebase/server-init";
-import { addTodoItem } from "@/ai/flows/add-todo-item";
-import { getRandomFact } from "@/ai/flows/return-random-fact";
 
 const { firestore: db } = initializeFirebase();
 
@@ -31,79 +28,16 @@ export async function sendMessageAction(
     };
     await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add(userMessageData);
 
-
-    // 2. Load memory for the session
-    const memoryFacts: AgentMemoryFact[] = [];
-    const memoryQuery = db.collection(`users/${userId}/sessions/${sessionId}/facts`).orderBy("createdAt", "desc");
-    
-    const memorySnapshot = await memoryQuery.get();
-    memorySnapshot.forEach((doc) => {
-      if (doc.id !== 'initial') {
-        memoryFacts.push(doc.data() as AgentMemoryFact);
-      }
-    });
-
-    // 3. Define tool descriptors
-    const toolDescriptors = [
-      {
-        name: "randomFactTool",
-        description: "Returns a random fact from a list of predefined facts.",
-        inputSchema: {},
-        outputSchema: { type: "string" },
-      },
-      {
-        name: "addTodo",
-        description: "Adds a to-do item to the user's to-do list.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            userId: { type: "string" },
-            text: { type: "string" },
-          },
-        },
-        outputSchema: {
-          type: "object",
-          properties: { success: { type: "boolean" }, message: { type: "string" } },
-        },
-      },
-    ];
-
-    // 4. Call the Genkit flow
-    const flowInput: GenerateResponseWithToolsInput = {
-      sessionId: `${userId}:${sessionId}`,
+    // 2. Call the simplified Genkit flow
+    const flowInput: GenerateResponseInput = {
       userMessage,
-      memoryFacts: memoryFacts.map((fact) => fact.text),
-      toolDescriptors,
     };
 
-    const flowOutput = await generateResponseWithTools(flowInput);
+    const flowOutput = await generateResponse(flowInput);
     
-    let responseContent = "";
+    const responseContent = flowOutput.response || "Sorry, I couldn't come up with a response.";
 
-    // 5. Determine response based on flow output
-    if (flowOutput.finalResponse) {
-      responseContent = flowOutput.finalResponse;
-    } else if (flowOutput.toolCalls && flowOutput.toolCalls.length > 0) {
-      let toolResponseMessages = "";
-      for (const toolCall of flowOutput.toolCalls) {
-        if (toolCall.name === 'addTodo') {
-          const result = await addTodoItem({ sessionId: `${userId}:${sessionId}`, item: toolCall.arguments.text });
-          toolResponseMessages += result.message + "\n";
-        } else if (toolCall.name === 'randomFactTool') {
-            const result = await getRandomFact({});
-            toolResponseMessages += result.fact + "\n";
-        }
-      }
-      responseContent = toolResponseMessages.trim();
-    }
-    
-    // Fallback if no response could be determined
-    if (!responseContent) {
-      responseContent = "I'm not sure how to respond to that. Can you try rephrasing?";
-    }
-
-
-    // 6. Save assistant message to Firestore
+    // 3. Save assistant message to Firestore
     const assistantMessageData = {
       role: "assistant",
       content: responseContent,

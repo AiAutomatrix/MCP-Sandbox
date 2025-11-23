@@ -4,14 +4,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BrainCircuit,
   History,
-  Wrench,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import {
   AgentLogViewer,
   AgentMemoryViewer,
-  ToolMemoryViewer,
 } from "./sidebar-viewers";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -43,7 +41,7 @@ export function ObservabilitySidebar({ sessionId, userId }: { sessionId: string,
         )}
       >
         <Tabs defaultValue="logs" className="flex flex-col h-full">
-          <TabsList className="grid w-full grid-cols-3 m-2">
+          <TabsList className="grid w-full grid-cols-2 m-2">
             <TabsTrigger value="logs">
               <History className="h-4 w-4 mr-2" />
               Logs
@@ -51,10 +49,6 @@ export function ObservabilitySidebar({ sessionId, userId }: { sessionId: string,
             <TabsTrigger value="agent_memory">
               <BrainCircuit className="h-4 w-4 mr-2" />
               Memory
-            </TabsTrigger>
-            <TabsTrigger value="tool_memory">
-              <Wrench className="h-4 w-4 mr-2" />
-              Tools
             </TabsTrigger>
           </TabsList>
           <TabsContent value="logs" className="flex-1 overflow-y-auto p-2 m-0">
@@ -65,12 +59,6 @@ export function ObservabilitySidebar({ sessionId, userId }: { sessionId: string,
             className="flex-1 overflow-y-auto p-2 m-0"
           >
             <AgentMemoryViewer sessionId={sessionId} userId={userId}/>
-          </TabsContent>
-          <TabsContent
-            value="tool_memory"
-            className="flex-1 overflow-y-auto p-2 m-0"
-          >
-            <ToolMemoryViewer userId={userId}/>
           </TabsContent>
         </Tabs>
       </div>

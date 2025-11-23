@@ -7,10 +7,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCollection, useMemoFirebase } from "@/firebase";
-import { AgentLogStep, AgentMemoryFact, TodoItem } from "@/lib/types";
+import { AgentLogStep, AgentMemoryFact } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { collection, query, orderBy } from 'firebase/firestore';
 import { useFirestore } from "@/firebase";
@@ -125,45 +125,3 @@ export function AgentMemoryViewer({ sessionId, userId }: { sessionId: string, us
     </div>
   );
 }
-
-export function ToolMemoryViewer({ userId }: { userId: string }) {
-  const db = useFirestore();
-  const todosQuery = useMemoFirebase(() => {
-    if (!userId) return null;
-    return query(collection(db, "users", userId, "todos"), orderBy("createdAt", "desc"));
-  }, [db, userId]);
-
-  const {
-    data: todos,
-    isLoading,
-    error,
-  } = useCollection<TodoItem>(todosQuery);
-  
-  // In a real app with more tools, you'd have a selector here.
-  // For now, we'll just show the todo tool's memory.
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Todo Tool Memory</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading && <ViewerSkeleton />}
-        {error && <EmptyState message="Error loading tool memory." />}
-        {!isLoading && !error && (!todos || todos.length === 0) && <EmptyState message="No to-do items yet." />}
-        {todos && todos.length > 0 && (
-          <ul className="space-y-2">
-            {todos.map(todo => (
-              <li key={todo.id} className="text-sm flex items-center gap-2">
-                <span className={todo.completed ? "line-through text-muted-foreground" : ""}>
-                  {todo.text}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-    
