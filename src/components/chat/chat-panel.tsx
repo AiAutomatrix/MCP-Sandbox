@@ -16,7 +16,7 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
   const { toast } = useToast();
   const db = useFirestore();
 
-  // Local state for optimistic UI updates
+  // Local state for optimistic UI updates (now only for assistant messages)
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([]);
 
   const messagesQuery = useMemoFirebase(() => {
@@ -43,7 +43,11 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     ];
 
     // Final sort to ensure chronological order
-    return combined.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    return combined.sort((a, b) => {
+        const timeA = a.timestamp?.toMillis() || 0;
+        const timeB = b.timestamp?.toMillis() || 0;
+        return timeA - timeB;
+    });
   }, [firestoreMessages, optimisticMessages]);
 
 
@@ -55,30 +59,13 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
 
   const handleSendMessage = (message: string) => {
     if (isPending || !userId) return;
-    
-    // Optimistically add user message to the UI
-    const optimisticUserMessage: ChatMessage = {
-      id: `optimistic-user-${Date.now()}`,
-      role: 'user',
-      content: message,
-      timestamp: Timestamp.now()
-    };
-    
-    setOptimisticMessages(prev => [...prev, optimisticUserMessage]);
 
     startTransition(async () => {
       try {
         const assistantResponse = await sendMessageAction(sessionId, message, userId);
         
-        // Replace the optimistic user message with the real one and add the assistant's response
-        // This is important for when the real-time listener is slow or fails
-        setOptimisticMessages(prev => {
-           // Filter out the temporary user message and add the assistant's response.
-           // The user's real message will come from the Firestore listener.
-           const newOptimisticList = prev.filter(m => m.id !== optimisticUserMessage.id);
-           newOptimisticList.push(assistantResponse);
-           return newOptimisticList;
-        });
+        // Optimistically add the assistant's response to the UI
+        setOptimisticMessages(prev => [...prev, assistantResponse]);
 
       } catch (error) {
          toast({
@@ -86,8 +73,6 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
           title: "An error occurred",
           description: "Failed to send message.",
         });
-        // Remove the optimistic user message if the action fails
-        setOptimisticMessages(prev => prev.filter(m => m.id !== optimisticUserMessage.id));
       }
     });
   };
