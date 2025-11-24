@@ -6,11 +6,11 @@ import {
   GenerateResponseInput,
   GenerateResponseOutput,
 } from '@/ai/flows/generate-response';
-import { TOOL_REGISTRY } from '@/mcp/tools';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { AgentMemoryFact } from '@/lib/types';
+import { TOOL_REGISTRY } from '@/mcp/tools';
 
 const { firestore: db } = initializeFirebase();
 const MAX_TOOL_LOOPS = 5;
@@ -141,13 +141,14 @@ export async function sendMessageAction(
     // 3. Start the agent loop
     let promptInput: GenerateResponseInput = { userMessage, memory };
     let finalResponse = '';
+    let flowOutput: GenerateResponseOutput | null = null;
 
     for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
-      const flowOutput: GenerateResponseOutput = await generateResponse(
+      flowOutput = await generateResponse(
         promptInput
       );
-
-      const reasoningData: any = {
+      
+      const logData: any = {
         reasoning: flowOutput.reasoning,
         toolCalls: flowOutput.toolRequest
           ? [JSON.stringify(flowOutput.toolRequest)]
@@ -155,7 +156,7 @@ export async function sendMessageAction(
       };
 
       if (i === 0) {
-        reasoningData.userMessage = userMessage;
+        logData.userMessage = userMessage;
       }
       
       // Save any new facts from this step
@@ -167,12 +168,12 @@ export async function sendMessageAction(
       if (flowOutput.toolRequest) {
         const toolName = flowOutput.toolRequest.name;
         let tool = TOOL_REGISTRY[toolName];
-
+        
         if (!tool) {
-            const simpleName = toolName.split('.').pop();
-            if (simpleName) {
-                tool = TOOL_REGISTRY[simpleName];
-            }
+          const simpleName = toolName.split('.').pop();
+          if (simpleName) {
+              tool = TOOL_REGISTRY[simpleName];
+          }
         }
         
         if (!tool) {
@@ -181,8 +182,8 @@ export async function sendMessageAction(
         
         const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        reasoningData.toolResults = [toolResult];
-        await logStep(userId, sessionId, reasoningData);
+        logData.toolResults = [toolResult];
+        await logStep(userId, sessionId, logData);
 
         const toolResponseForPrompt = typeof toolResult === 'object' ? JSON.stringify(toolResult, null, 2) : toolResult;
         promptInput = { ...promptInput, userMessage: '', toolResponse: toolResponseForPrompt };
@@ -192,18 +193,28 @@ export async function sendMessageAction(
 
       if (flowOutput.response) {
         finalResponse = flowOutput.response;
-        reasoningData.finalResponse = finalResponse;
-        await logStep(userId, sessionId, reasoningData);
+        logData.finalResponse = finalResponse;
+        await logStep(userId, sessionId, logData);
         break; 
       }
 
+      // Log a step even if there is no final response but there is reasoning
       if (flowOutput.reasoning) {
-        await logStep(userId, sessionId, reasoningData);
+        await logStep(userId, sessionId, logData);
       }
+    }
+
+    if (!finalResponse && flowOutput && flowOutput.response) {
+      finalResponse = flowOutput.response;
     }
 
     if (!finalResponse) {
       finalResponse = "Sorry, I couldn't come up with a response.";
+      await logStep(userId, sessionId, {
+        userMessage: userMessage,
+        reasoning: 'Agent failed to produce a final response after exhausting tool loops or initial generation.',
+        finalResponse: finalResponse,
+      });
     }
 
     // 6. Save the final assistant message
