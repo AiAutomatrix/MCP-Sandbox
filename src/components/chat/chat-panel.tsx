@@ -36,11 +36,22 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
 
   // Combine firestore messages with optimistic messages
   const messages = useMemo(() => {
-    if (!firestoreMessages) return optimisticMessages;
-    // Filter out optimistic messages that are now confirmed in Firestore
-    const confirmedIds = new Set(firestoreMessages.map(m => m.id));
-    const uniqueOptimistic = optimisticMessages.filter(m => !confirmedIds.has(m.id));
-    return [...firestoreMessages, ...uniqueOptimistic];
+    const combined = [...(firestoreMessages || [])];
+    const firestoreIds = new Set(combined.map(m => m.id));
+    
+    optimisticMessages.forEach(optMsg => {
+      // Find if an optimistic message's placeholder ID is already represented
+      // by a real ID from firestore. This is not perfect but covers user messages.
+      // A more robust solution might involve mapping placeholder IDs to real IDs.
+      if (!firestoreIds.has(optMsg.id)) {
+        combined.push(optMsg);
+      }
+    });
+
+    // Final filter for any duplicates that might have slipped through
+    const uniqueMessages = Array.from(new Map(combined.map(m => [m.id, m])).values());
+
+    return uniqueMessages.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
   }, [firestoreMessages, optimisticMessages]);
 
 
@@ -54,21 +65,26 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     if (isPending || !userId) return;
     
     // Optimistically add user message to the UI
-    const optimisticUserId = `user-${Date.now()}`;
-    const newUserMessage: ChatMessage = {
-      id: optimisticUserId,
+    const optimisticUserMessage: ChatMessage = {
+      id: `optimistic-user-${Date.now()}`,
       role: 'user',
       content: message,
       timestamp: Timestamp.now()
     };
-    setOptimisticMessages(prev => [...prev, newUserMessage]);
-
+    
+    setOptimisticMessages(prev => [...prev, optimisticUserMessage]);
 
     startTransition(async () => {
       try {
         const assistantResponse = await sendMessageAction(sessionId, message, userId);
-        // Add assistant's response to the optimistic list
-        setOptimisticMessages(prev => [...prev, assistantResponse]);
+        
+        // Remove the optimistic user message and add the real one + the assistant's response
+        setOptimisticMessages(prev => {
+          const newOptimisticList = prev.filter(m => m.id !== optimisticUserMessage.id);
+          newOptimisticList.push(assistantResponse);
+          return newOptimisticList;
+        });
+
       } catch (error) {
          toast({
           variant: "destructive",
@@ -76,7 +92,7 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
           description: "Failed to send message.",
         });
         // Remove the optimistic user message if the action fails
-        setOptimisticMessages(prev => prev.filter(m => m.id !== optimisticUserId));
+        setOptimisticMessages(prev => prev.filter(m => m.id !== optimisticUserMessage.id));
       }
     });
   };
@@ -92,3 +108,4 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     </div>
   );
 }
+
