@@ -19,7 +19,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { mathEvaluator, todoTool } from '@/ai/tools';
+import { mathEvaluator, todoTool } from '@/mcp/tools';
 
 // -----------------------------
 // Schemas

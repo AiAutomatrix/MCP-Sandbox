@@ -6,7 +6,7 @@ import {
   GenerateResponseInput,
   GenerateResponseOutput,
 } from '@/ai/flows/generate-response';
-import { TOOL_REGISTRY } from '@/ai/tools';
+import { TOOL_REGISTRY } from '@/mcp/tools';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
 import { FieldValue } from 'firebase-admin/firestore';
