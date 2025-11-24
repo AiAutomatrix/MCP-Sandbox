@@ -165,7 +165,17 @@ export async function sendMessageAction(
       
       // 4. Check for a tool request
       if (flowOutput.toolRequest) {
-        const tool = TOOL_REGISTRY[flowOutput.toolRequest.name];
+        const toolName = flowOutput.toolRequest.name;
+        let tool = TOOL_REGISTRY[toolName];
+
+        // Handle fully-qualified tool names from Genkit
+        if (!tool) {
+            const simpleName = toolName.split('.').pop();
+            if (simpleName) {
+                tool = TOOL_REGISTRY[simpleName];
+            }
+        }
+        
         if (!tool) {
           throw new Error(`Unknown tool: ${flowOutput.toolRequest.name}`);
         }
