@@ -1,3 +1,4 @@
+
 'use server';
 
 import {
@@ -156,8 +157,7 @@ export async function sendMessageAction(
       if (i === 0) {
         reasoningData.userMessage = userMessage;
       }
-      await logStep(userId, sessionId, reasoningData);
-
+      
       // Save any new facts from this step
       if (flowOutput.newFacts) {
         await saveFacts(userId, sessionId, flowOutput.newFacts);
@@ -177,16 +177,15 @@ export async function sendMessageAction(
         }
         
         if (!tool) {
-          throw new Error(`Unknown tool: ${flowOutput.toolRequest.name}`);
+          throw new Error(`Unknown tool: ${toolName}`);
         }
         
         // Execute the tool
         const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        // Log the tool's result
-        await logStep(userId, sessionId, {
-            toolResults: [toolResult]
-        });
+        // Log the tool's result along with the reasoning that produced it
+        reasoningData.toolResults = [toolResult];
+        await logStep(userId, sessionId, reasoningData);
 
         // Prepare the input for the next loop iteration
         // Clear userMessage so it's not resent.
@@ -197,11 +196,15 @@ export async function sendMessageAction(
       // 5. If no tool request, we have our final answer
       if (flowOutput.response) {
         finalResponse = flowOutput.response;
-        // Log the final response
-         await logStep(userId, sessionId, {
-            finalResponse: finalResponse
-        });
+        // Log the final response and the reasoning that led to it
+        reasoningData.finalResponse = finalResponse;
+        await logStep(userId, sessionId, reasoningData);
         break; // Exit the loop
+      }
+
+      // If we are here without a tool request or a response, log the reasoning step and exit.
+      if (flowOutput.reasoning) {
+        await logStep(userId, sessionId, reasoningData);
       }
     }
 
