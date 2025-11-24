@@ -142,20 +142,15 @@ export async function sendMessageAction(
     let promptInput: GenerateResponseInput = { userMessage, memory };
     let finalResponse = '';
     let flowOutput: GenerateResponseOutput | null = null;
+    let combinedLogData: any = {};
 
     for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
       flowOutput = await generateResponse(promptInput);
       
-      const logData: any = {
-        reasoning: flowOutput.reasoning,
-        toolCalls: flowOutput.toolRequest
-          ? [JSON.stringify(flowOutput.toolRequest)]
-          : [],
-      };
-
-      if (i === 0) {
-        logData.userMessage = userMessage;
-      }
+      // Combine reasoning and tool calls into one log object for the step
+      if (flowOutput.reasoning) combinedLogData.reasoning = flowOutput.reasoning;
+      if (flowOutput.toolRequest) combinedLogData.toolCalls = [JSON.stringify(flowOutput.toolRequest)];
+      if (i === 0) combinedLogData.userMessage = userMessage;
       
       if (flowOutput.newFacts) {
         await saveFacts(userId, sessionId, flowOutput.newFacts);
@@ -178,9 +173,8 @@ export async function sendMessageAction(
         
         const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        logData.toolResults = [toolResult];
-        await logStep(userId, sessionId, logData);
-
+        combinedLogData.toolResults = [toolResult];
+        
         const toolResponseForPrompt =
           typeof toolResult === 'object'
             ? JSON.stringify(toolResult, null, 2)
@@ -193,13 +187,15 @@ export async function sendMessageAction(
 
       if (flowOutput.response) {
         finalResponse = flowOutput.response;
-        logData.finalResponse = finalResponse;
-        await logStep(userId, sessionId, logData);
+        combinedLogData.finalResponse = finalResponse;
+        await logStep(userId, sessionId, combinedLogData);
         break; 
       }
 
-      if (flowOutput.reasoning) {
-        await logStep(userId, sessionId, logData);
+       // If there's only reasoning without a tool call or final response, log it.
+      if (flowOutput.reasoning && !finalResponse) {
+         await logStep(userId, sessionId, combinedLogData);
+         combinedLogData = {}; // Reset for next loop if any
       }
     }
 
