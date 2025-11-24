@@ -52,7 +52,7 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
         <AccordionItem value={log.id} key={log.id}>
           <AccordionTrigger className="text-sm text-left hover:no-underline">
             <div className="flex flex-col gap-1">
-              <span className="font-semibold truncate max-w-xs">{log.userMessage}</span>
+              <span className="font-semibold truncate max-w-xs">{log.userMessage || (log.toolResults ? 'Tool Result' : 'Agent Thought')}</span>
               <span className="text-xs text-muted-foreground">
                 {log.timestamp
                   ? formatDistanceToNow(log.timestamp.toDate(), { addSuffix: true })
@@ -72,6 +72,14 @@ export function AgentLogViewer({ sessionId, userId }: { sessionId: string, userI
                 <h4 className="font-semibold text-muted-foreground mb-1">Tool Calls:</h4>
                 <pre className="p-2 bg-muted rounded-md whitespace-pre-wrap break-all">
                   {JSON.stringify(log.toolCalls, null, 2)}
+                </pre>
+              </div>
+            )}
+            {log.toolResults && log.toolResults.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-muted-foreground mb-1">Tool Results:</h4>
+                <pre className="p-2 bg-muted rounded-md whitespace-pre-wrap break-all">
+                  {JSON.stringify(log.toolResults, null, 2)}
                 </pre>
               </div>
             )}
