@@ -147,13 +147,13 @@ export async function sendMessageAction(
         promptInput
       );
 
-      // Log the AI's reasoning and potential tool request
       const reasoningData: any = {
         reasoning: flowOutput.reasoning,
         toolCalls: flowOutput.toolRequest
           ? [JSON.stringify(flowOutput.toolRequest)]
           : [],
       };
+
       if (i === 0) {
         reasoningData.userMessage = userMessage;
       }
@@ -168,7 +168,6 @@ export async function sendMessageAction(
         const toolName = flowOutput.toolRequest.name;
         let tool = TOOL_REGISTRY[toolName];
 
-        // Handle fully-qualified tool names from Genkit
         if (!tool) {
             const simpleName = toolName.split('.').pop();
             if (simpleName) {
@@ -180,29 +179,24 @@ export async function sendMessageAction(
           throw new Error(`Unknown tool: ${toolName}`);
         }
         
-        // Execute the tool
         const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        // Log the tool's result along with the reasoning that produced it
         reasoningData.toolResults = [toolResult];
         await logStep(userId, sessionId, reasoningData);
 
-        // Prepare the input for the next loop iteration
-        // Clear userMessage so it's not resent.
-        promptInput = { ...promptInput, userMessage: '', toolResponse: toolResult };
-        continue; // Go to the next iteration
+        const toolResponseForPrompt = typeof toolResult === 'object' ? JSON.stringify(toolResult, null, 2) : toolResult;
+        promptInput = { ...promptInput, userMessage: '', toolResponse: toolResponseForPrompt };
+
+        continue;
       }
 
-      // 5. If no tool request, we have our final answer
       if (flowOutput.response) {
         finalResponse = flowOutput.response;
-        // Log the final response and the reasoning that led to it
         reasoningData.finalResponse = finalResponse;
         await logStep(userId, sessionId, reasoningData);
-        break; // Exit the loop
+        break; 
       }
 
-      // If we are here without a tool request or a response, log the reasoning step and exit.
       if (flowOutput.reasoning) {
         await logStep(userId, sessionId, reasoningData);
       }
@@ -226,7 +220,6 @@ export async function sendMessageAction(
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
     const errorMessage = 'Sorry, something went wrong while processing your request.';
-    // Attempt to save an error message to the chat for user feedback
     const docRef = await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
       .add({
