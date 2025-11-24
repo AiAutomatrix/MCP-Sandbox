@@ -1,17 +1,11 @@
 'use server';
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import * as admin from 'firebase-admin';
+import { initializeFirebase } from '@/firebase/server-init';
 
-// Initialize firebase-admin (safe to call multiple times)
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp();
-  } catch (e) {
-    // ignore double init in non-cloud-run environments
-  }
+function getDb() {
+  return initializeFirebase().firestore;
 }
-const db = admin.firestore();
 
 // -----------------------------
 // Tool Definitions
@@ -59,6 +53,7 @@ export const todoTool = ai.defineTool(
     outputSchema: z.any(),
   },
   async (input) => {
+    const db = getDb();
     const collectionBase = 'tool_memory/todoTool/items';
     try {
       if (input.action === 'add') {
@@ -67,7 +62,7 @@ export const todoTool = ai.defineTool(
           text: input.text,
           completed: false,
           sessionId: input.sessionId || null,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: new Date(),
         });
         return { ok: true, id: docRef.id, text: input.text };
       }
