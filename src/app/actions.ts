@@ -175,7 +175,7 @@ export async function sendMessageAction(
 
         // Log the tool's result
         await logStep(userId, sessionId, {
-            toolResults: [JSON.stringify(toolResult)]
+            toolResults: [toolResult]
         });
 
         // Prepare the input for the next loop iteration
@@ -221,11 +221,15 @@ export async function sendMessageAction(
         content: errorMessage,
         timestamp: FieldValue.serverTimestamp(),
       });
-    await logStep(userId, sessionId, {
-      userMessage,
+    const logData: any = {
       finalResponse: errorMessage,
       reasoning: `Error: ${error instanceof Error ? error.message : String(error)}`,
-    });
+    };
+    if (userMessage) {
+        logData.userMessage = userMessage;
+    }
+    await logStep(userId, sessionId, logData);
+
     revalidatePath('/');
     return { id: docRef.id, role: 'assistant', content: errorMessage };
   }
