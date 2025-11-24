@@ -8,7 +8,7 @@ import {
 } from '@/ai/flows/generate-response';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { AgentMemoryFact, ChatMessage } from '@/lib/types';
 import { TOOL_REGISTRY } from '@/mcp/tools';
 
@@ -123,7 +123,7 @@ export async function sendMessageAction(
 
   try {
     // 1. Save user message
-    const userMessageRef = await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
+    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
       role: 'user',
       content: userMessage,
       timestamp: FieldValue.serverTimestamp(),
@@ -229,12 +229,8 @@ export async function sendMessageAction(
       id: docRef.id,
       role: 'assistant',
       content: finalResponse,
-      // The client will have to deal with the fact that this is a server timestamp
-      // For optimistic UI this is fine.
-      timestamp: {
-        seconds: Math.floor(Date.now() / 1000),
-        nanoseconds: 0,
-      } as any,
+      // For optimistic UI this is fine. It needs to be a real Timestamp object.
+      timestamp: Timestamp.now(),
     };
     return assistantMessage;
 
@@ -261,10 +257,7 @@ export async function sendMessageAction(
        id: docRef.id,
        role: 'assistant',
        content: errorMessage,
-       timestamp: {
-        seconds: Math.floor(Date.now() / 1000),
-        nanoseconds: 0,
-       } as any,
+       timestamp: Timestamp.now(),
     }
     return errorResponseMessage;
   }

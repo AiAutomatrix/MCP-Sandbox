@@ -36,12 +36,13 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
 
   // Combine firestore messages with optimistic messages, filtering out duplicates
   const messages = useMemo(() => {
-    const optimisticIds = new Set(optimisticMessages.map(m => m.id));
     const combined = [
-      ...(firestoreMessages?.filter(m => !optimisticIds.has(m.id)) || []),
-      ...optimisticMessages
+      ...(firestoreMessages || []),
+      ...optimisticMessages.filter(
+        (optMsg) => !firestoreMessages?.some((fsMsg) => fsMsg.id === optMsg.id)
+      ),
     ];
-
+  
     // Final sort to ensure chronological order
     return combined.sort((a, b) => {
         const timeA = a.timestamp?.toMillis() || 0;
