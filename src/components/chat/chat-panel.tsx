@@ -34,24 +34,16 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     error,
   } = useCollection<ChatMessage>(messagesQuery);
 
-  // Combine firestore messages with optimistic messages
+  // Combine firestore messages with optimistic messages, filtering out duplicates
   const messages = useMemo(() => {
-    const combined = [...(firestoreMessages || [])];
-    const firestoreIds = new Set(combined.map(m => m.id));
-    
-    optimisticMessages.forEach(optMsg => {
-      // Find if an optimistic message's placeholder ID is already represented
-      // by a real ID from firestore. This is not perfect but covers user messages.
-      // A more robust solution might involve mapping placeholder IDs to real IDs.
-      if (!firestoreIds.has(optMsg.id)) {
-        combined.push(optMsg);
-      }
-    });
+    const optimisticIds = new Set(optimisticMessages.map(m => m.id));
+    const combined = [
+      ...(firestoreMessages?.filter(m => !optimisticIds.has(m.id)) || []),
+      ...optimisticMessages
+    ];
 
-    // Final filter for any duplicates that might have slipped through
-    const uniqueMessages = Array.from(new Map(combined.map(m => [m.id, m])).values());
-
-    return uniqueMessages.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+    // Final sort to ensure chronological order
+    return combined.sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
   }, [firestoreMessages, optimisticMessages]);
 
 
@@ -78,11 +70,14 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
       try {
         const assistantResponse = await sendMessageAction(sessionId, message, userId);
         
-        // Remove the optimistic user message and add the real one + the assistant's response
+        // Replace the optimistic user message with the real one and add the assistant's response
+        // This is important for when the real-time listener is slow or fails
         setOptimisticMessages(prev => {
-          const newOptimisticList = prev.filter(m => m.id !== optimisticUserMessage.id);
-          newOptimisticList.push(assistantResponse);
-          return newOptimisticList;
+           // Filter out the temporary user message and add the assistant's response.
+           // The user's real message will come from the Firestore listener.
+           const newOptimisticList = prev.filter(m => m.id !== optimisticUserMessage.id);
+           newOptimisticList.push(assistantResponse);
+           return newOptimisticList;
         });
 
       } catch (error) {
@@ -108,4 +103,3 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     </div>
   );
 }
-
