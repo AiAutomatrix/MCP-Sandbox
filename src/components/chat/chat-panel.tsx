@@ -5,15 +5,13 @@ import { useState, useTransition, useEffect, useMemo } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { ChatMessage } from "@/lib/types";
 import { sendMessageAction } from "@/app/actions";
-import { useToast } from "@/hooks/use-toast";
 import { ChatMessages } from "./chat-messages";
 import { ChatInput } from "./chat-input";
-import { collection, query, orderBy, limit, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, limit } from "firebase/firestore";
 
 
 export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: string }) {
   const [isPending, startTransition] = useTransition();
-  const { toast } = useToast();
   const db = useFirestore();
 
   // Local state for optimistic UI updates (now only for assistant messages)
@@ -62,19 +60,13 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     if (isPending || !userId) return;
 
     startTransition(async () => {
-      try {
-        const assistantResponse = await sendMessageAction(sessionId, message, userId);
-        
-        // Optimistically add the assistant's response to the UI
-        setOptimisticMessages(prev => [...prev, assistantResponse]);
-
-      } catch (error) {
-         toast({
-          variant: "destructive",
-          title: "An error occurred",
-          description: "Failed to send message.",
-        });
-      }
+      // The `sendMessageAction` has its own internal try/catch and will return
+      // a user-facing error message if something fails on the server.
+      // There's no need for a client-side try/catch here.
+      const assistantResponse = await sendMessageAction(sessionId, message, userId);
+      
+      // Optimistically add the assistant's response to the UI
+      setOptimisticMessages(prev => [...prev, assistantResponse]);
     });
   };
 
