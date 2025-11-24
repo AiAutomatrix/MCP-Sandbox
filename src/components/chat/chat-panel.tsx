@@ -7,7 +7,7 @@ import { ChatMessage } from "@/lib/types";
 import { sendMessageAction } from "@/app/actions";
 import { ChatMessages } from "./chat-messages";
 import { ChatInput } from "./chat-input";
-import { collection, query, orderBy, limit } from "firebase/firestore";
+import { collection, query, orderBy, limit, Timestamp } from "firebase/firestore";
 
 
 export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: string }) {
@@ -43,8 +43,9 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
   
     // Final sort to ensure chronological order
     return combined.sort((a, b) => {
-        const timeA = a.timestamp?.toMillis() || 0;
-        const timeB = b.timestamp?.toMillis() || 0;
+        // Handle both plain objects and Timestamp instances
+        const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : (a.timestamp as any).seconds * 1000;
+        const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : (b.timestamp as any).seconds * 1000;
         return timeA - timeB;
     });
   }, [firestoreMessages, optimisticMessages]);
@@ -60,9 +61,8 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     if (isPending || !userId) return;
 
     startTransition(async () => {
-      // The `sendMessageAction` has its own internal try/catch and will return
-      // a user-facing error message if something fails on the server.
-      // There's no need for a client-side try/catch here.
+      // The `sendMessageAction` returns the assistant's response.
+      // The timestamp will be a plain object here.
       const assistantResponse = await sendMessageAction(sessionId, message, userId);
       
       // Optimistically add the assistant's response to the UI
