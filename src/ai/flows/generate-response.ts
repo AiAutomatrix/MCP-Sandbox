@@ -39,6 +39,12 @@ const GenerateResponseInputSchema = z.object({
     .any()
     .optional()
     .describe('Optional result from a tool run (for tool loops)'),
+  previousReasoning: z
+    .string()
+    .optional()
+    .describe(
+      'The reasoning from the previous turn, provided when a tool was called.'
+    ),
 });
 export type GenerateResponseInput = z.infer<typeof GenerateResponseInputSchema>;
 
@@ -75,6 +81,7 @@ You are given:
 - A list of memory facts (use them if relevant).
 - The user's message.
 - Optionally, the result of a previously-run tool in 'toolResponse'.
+- Optionally, your reasoning from the previous step in 'previousReasoning'.
 
 Your goals:
 1. Answer the user's message directly and conversationally.
@@ -87,7 +94,7 @@ Your goals:
 4. Return \`newFacts\` — small, useful facts to save to memory (or an empty array).
 
 Remember:
-- If \`toolResponse\` is present, incorporate it into your reasoning and provide a final user-facing \`response\`.
+- If \`toolResponse\` is present, use it along with your 'previousReasoning' to understand the context. Then, formulate and provide a final user-facing \`response\`.
 - Only request tools when absolutely necessary. If the user is just chatting, have a normal conversation.
 
 Current Memory/Facts:
@@ -101,6 +108,11 @@ Current Memory/Facts:
 
 User message:
 {{{userMessage}}}
+
+{{#if previousReasoning}}
+Your previous reasoning:
+{{{previousReasoning}}}
+{{/if}}
 
 Previous tool result (if any):
 {{#if toolResponse}}

@@ -181,7 +181,12 @@ export async function sendMessageAction(
             ? JSON.stringify(toolResult, null, 2)
             : toolResult;
         
-        promptInput = { ...promptInput, userMessage: '', toolResponse: toolResponseForPrompt };
+        promptInput = { 
+            ...promptInput, 
+            userMessage: '', 
+            toolResponse: toolResponseForPrompt,
+            previousReasoning: flowOutput.reasoning,
+        };
 
         continue;
       }
