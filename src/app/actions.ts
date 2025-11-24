@@ -9,7 +9,7 @@ import {
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { AgentMemoryFact } from '@/lib/types';
+import type { AgentMemoryFact, ChatMessage } from '@/lib/types';
 import { TOOL_REGISTRY } from '@/mcp/tools';
 
 const { firestore: db } = initializeFirebase();
@@ -116,14 +116,14 @@ export async function sendMessageAction(
   sessionId: string,
   userMessage: string,
   userId: string
-): Promise<{ id: string; role: 'assistant'; content: string }> {
+): Promise<ChatMessage> {
   if (!sessionId || !userMessage || !userId) {
     throw new Error('Session ID, user message, and user ID are required.');
   }
 
   try {
     // 1. Save user message
-    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
+    const userMessageRef = await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
       role: 'user',
       content: userMessage,
       timestamp: FieldValue.serverTimestamp(),
@@ -142,7 +142,7 @@ export async function sendMessageAction(
     let promptInput: GenerateResponseInput = { userMessage, memory };
     let finalResponse = '';
     let flowOutput: GenerateResponseOutput | null = null;
-    let combinedLogData: any = {};
+    let combinedLogData: any = { userMessage };
 
     for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
       flowOutput = await generateResponse(promptInput);
@@ -150,7 +150,6 @@ export async function sendMessageAction(
       // Combine reasoning and tool calls into one log object for the step
       if (flowOutput.reasoning) combinedLogData.reasoning = flowOutput.reasoning;
       if (flowOutput.toolRequest) combinedLogData.toolCalls = [JSON.stringify(flowOutput.toolRequest)];
-      if (i === 0) combinedLogData.userMessage = userMessage;
       
       if (flowOutput.newFacts) {
         await saveFacts(userId, sessionId, flowOutput.newFacts);
@@ -173,7 +172,9 @@ export async function sendMessageAction(
         
         const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        combinedLogData.toolResults = [toolResult];
+        combinedLogData.toolResults = [typeof toolResult === 'object' ? JSON.stringify(toolResult, null, 2) : toolResult];
+        await logStep(userId, sessionId, combinedLogData);
+        combinedLogData = {}; // Clear for next potential loop
         
         const toolResponseForPrompt =
           typeof toolResult === 'object'
@@ -222,8 +223,21 @@ export async function sendMessageAction(
     
     // Revalidate the path to update server-side rendered components like logs and memory
     revalidatePath('/');
+    
+    // Return a valid ChatMessage object for optimistic UI updates
+    const assistantMessage: ChatMessage = {
+      id: docRef.id,
+      role: 'assistant',
+      content: finalResponse,
+      // The client will have to deal with the fact that this is a server timestamp
+      // For optimistic UI this is fine.
+      timestamp: {
+        seconds: Math.floor(Date.now() / 1000),
+        nanoseconds: 0,
+      } as any,
+    };
+    return assistantMessage;
 
-    return { id: docRef.id, role: 'assistant', content: finalResponse };
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
     const errorMessage = 'Sorry, something went wrong while processing your request.';
@@ -237,13 +251,21 @@ export async function sendMessageAction(
     const logData: any = {
       finalResponse: errorMessage,
       reasoning: `Error: ${error instanceof Error ? error.message : String(error)}`,
+      userMessage,
     };
-    if (userMessage) {
-        logData.userMessage = userMessage;
-    }
+
     await logStep(userId, sessionId, logData);
 
     revalidatePath('/'); // Also revalidate on error
-    return { id: docRef.id, role: 'assistant', content: errorMessage };
+    const errorResponseMessage: ChatMessage = {
+       id: docRef.id,
+       role: 'assistant',
+       content: errorMessage,
+       timestamp: {
+        seconds: Math.floor(Date.now() / 1000),
+        nanoseconds: 0,
+       } as any,
+    }
+    return errorResponseMessage;
   }
 }

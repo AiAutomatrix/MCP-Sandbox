@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { ChatMessage } from "@/lib/types";
 import { sendMessageAction } from "@/app/actions";
@@ -35,7 +35,7 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
   } = useCollection<ChatMessage>(messagesQuery);
 
   // Combine firestore messages with optimistic messages
-  const messages = useMemoFirebase(() => {
+  const messages = useMemo(() => {
     if (!firestoreMessages) return optimisticMessages;
     // Filter out optimistic messages that are now confirmed in Firestore
     const confirmedIds = new Set(firestoreMessages.map(m => m.id));
@@ -54,9 +54,9 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
     if (isPending || !userId) return;
     
     // Optimistically add user message to the UI
-    const optimisticId = Date.now().toString();
+    const optimisticUserId = `user-${Date.now()}`;
     const newUserMessage: ChatMessage = {
-      id: optimisticId,
+      id: optimisticUserId,
       role: 'user',
       content: message,
       timestamp: Timestamp.now()
@@ -66,15 +66,17 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
 
     startTransition(async () => {
       try {
-        await sendMessageAction(sessionId, message, userId);
+        const assistantResponse = await sendMessageAction(sessionId, message, userId);
+        // Add assistant's response to the optimistic list
+        setOptimisticMessages(prev => [...prev, assistantResponse]);
       } catch (error) {
          toast({
           variant: "destructive",
           title: "An error occurred",
           description: "Failed to send message.",
         });
-        // Remove the optimistic message if the action fails
-        setOptimisticMessages(prev => prev.filter(m => m.id !== optimisticId));
+        // Remove the optimistic user message if the action fails
+        setOptimisticMessages(prev => prev.filter(m => m.id !== optimisticUserId));
       }
     });
   };
