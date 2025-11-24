@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useCollection, useFirestore, useMemoFirebase } from "@/firebase";
 import { ChatMessage } from "@/lib/types";
 import { sendMessageAction } from "@/app/actions";
@@ -14,9 +14,6 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
   const [isPending, startTransition] = useTransition();
   const db = useFirestore();
 
-  // Local state for optimistic UI updates (now only for assistant messages)
-  const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([]);
-
   const messagesQuery = useMemoFirebase(() => {
     if (!userId || !sessionId) return null;
     return query(
@@ -27,53 +24,37 @@ export function ChatPanel({ sessionId, userId }: { sessionId: string, userId: st
   }, [db, userId, sessionId]);
 
   const {
-    data: firestoreMessages,
+    data: messages,
     isLoading,
     error,
   } = useCollection<ChatMessage>(messagesQuery);
-
-  // Combine firestore messages with optimistic messages, filtering out duplicates
-  const messages = useMemo(() => {
-    const combined = [
-      ...(firestoreMessages || []),
-      ...optimisticMessages.filter(
-        (optMsg) => !firestoreMessages?.some((fsMsg) => fsMsg.id === optMsg.id)
-      ),
-    ];
-  
-    // Final sort to ensure chronological order
-    return combined.sort((a, b) => {
-        // Handle both plain objects and Timestamp instances
-        const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : (a.timestamp as any).seconds * 1000;
-        const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : (b.timestamp as any).seconds * 1000;
-        return timeA - timeB;
-    });
-  }, [firestoreMessages, optimisticMessages]);
-
-
-  useEffect(() => {
-    // When session changes, clear optimistic messages
-    setOptimisticMessages([]);
-  }, [sessionId]);
-
 
   const handleSendMessage = (message: string) => {
     if (isPending || !userId) return;
 
     startTransition(async () => {
-      // The `sendMessageAction` returns the assistant's response.
-      // The timestamp will be a plain object here.
-      const assistantResponse = await sendMessageAction(sessionId, message, userId);
-      
-      // Optimistically add the assistant's response to the UI
-      setOptimisticMessages(prev => [...prev, assistantResponse]);
+      // The action now handles saving both user and assistant messages.
+      // It no longer returns a value, preventing the serialization error.
+      await sendMessageAction(sessionId, message, userId);
     });
   };
+
+  const sortedMessages = useMemo(() => {
+    if (!messages) return [];
+    // Firestore's query already orders by timestamp, but a client-side sort
+    // is a good safeguard if we ever introduce optimistic updates again.
+    return messages.sort((a, b) => {
+        const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : a.timestamp ? (a.timestamp as any).seconds * 1000 : 0;
+        const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : b.timestamp ? (b.timestamp as any).seconds * 1000 : 0;
+        return timeA - timeB;
+    });
+  }, [messages]);
+
 
   return (
     <div className="flex flex-col flex-1 h-full max-h-full">
       <ChatMessages
-        messages={messages || []}
+        messages={sortedMessages}
         isLoading={isLoading && !messages?.length} // Only show skeleton on initial load
         isThinking={isPending}
       />

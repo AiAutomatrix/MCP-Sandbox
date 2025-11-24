@@ -8,8 +8,8 @@ import {
 } from '@/ai/flows/generate-response';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import type { AgentMemoryFact, ChatMessage } from '@/lib/types';
+import { FieldValue } from 'firebase-admin/firestore';
+import type { AgentMemoryFact } from '@/lib/types';
 import { TOOL_REGISTRY } from '@/mcp/tools';
 
 const { firestore: db } = initializeFirebase();
@@ -116,7 +116,7 @@ export async function sendMessageAction(
   sessionId: string,
   userMessage: string,
   userId: string
-): Promise<ChatMessage> {
+): Promise<void> {
   if (!sessionId || !userMessage || !userId) {
     throw new Error('Session ID, user message, and user ID are required.');
   }
@@ -213,7 +213,7 @@ export async function sendMessageAction(
       });
     }
 
-    const docRef = await db
+    await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
       .add({
         role: 'assistant',
@@ -224,20 +224,11 @@ export async function sendMessageAction(
     // Revalidate the path to update server-side rendered components like logs and memory
     revalidatePath('/');
     
-    // Return a valid ChatMessage object for optimistic UI updates
-    const assistantMessage: ChatMessage = {
-      id: docRef.id,
-      role: 'assistant',
-      content: finalResponse,
-      // For optimistic UI this is fine. It needs to be a real Timestamp object.
-      timestamp: Timestamp.now(),
-    };
-    return assistantMessage;
 
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
     const errorMessage = 'Sorry, something went wrong while processing your request.';
-    const docRef = await db
+    await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
       .add({
         role: 'assistant',
@@ -253,12 +244,5 @@ export async function sendMessageAction(
     await logStep(userId, sessionId, logData);
 
     revalidatePath('/'); // Also revalidate on error
-    const errorResponseMessage: ChatMessage = {
-       id: docRef.id,
-       role: 'assistant',
-       content: errorMessage,
-       timestamp: Timestamp.now(),
-    }
-    return errorResponseMessage;
   }
 }
