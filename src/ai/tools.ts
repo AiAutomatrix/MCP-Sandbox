@@ -1,4 +1,3 @@
-'use server';
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { initializeFirebase } from '@/firebase/server-init';
@@ -89,7 +88,8 @@ export const todoTool = ai.defineTool(
       }
 
       return { error: 'Unknown action' };
-    } catch (err: any) {
+    } catch (err: any)
+      {
       return { error: err?.message ?? String(err) };
     }
   }
