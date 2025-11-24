@@ -66,7 +66,7 @@ export async function createNewConversationAction(
     await deleteCollection(`users/${userId}/sessions/${sessionId}/facts`);
     await sessionRef.delete();
 
-    revalidatePath('/');
+    revalidatePath('/'); // Revalidate to clear server-side caches for logs/memory
     return { success: true };
   } catch (error) {
     console.error('Error deleting conversation:', error);
@@ -144,9 +144,7 @@ export async function sendMessageAction(
     let flowOutput: GenerateResponseOutput | null = null;
 
     for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
-      flowOutput = await generateResponse(
-        promptInput
-      );
+      flowOutput = await generateResponse(promptInput);
       
       const logData: any = {
         reasoning: flowOutput.reasoning,
@@ -159,12 +157,10 @@ export async function sendMessageAction(
         logData.userMessage = userMessage;
       }
       
-      // Save any new facts from this step
       if (flowOutput.newFacts) {
         await saveFacts(userId, sessionId, flowOutput.newFacts);
       }
       
-      // 4. Check for a tool request
       if (flowOutput.toolRequest) {
         const toolName = flowOutput.toolRequest.name;
         let tool = TOOL_REGISTRY[toolName];
@@ -185,7 +181,11 @@ export async function sendMessageAction(
         logData.toolResults = [toolResult];
         await logStep(userId, sessionId, logData);
 
-        const toolResponseForPrompt = typeof toolResult === 'object' ? JSON.stringify(toolResult, null, 2) : toolResult;
+        const toolResponseForPrompt =
+          typeof toolResult === 'object'
+            ? JSON.stringify(toolResult, null, 2)
+            : toolResult;
+        
         promptInput = { ...promptInput, userMessage: '', toolResponse: toolResponseForPrompt };
 
         continue;
@@ -198,7 +198,6 @@ export async function sendMessageAction(
         break; 
       }
 
-      // Log a step even if there is no final response but there is reasoning
       if (flowOutput.reasoning) {
         await logStep(userId, sessionId, logData);
       }
@@ -217,7 +216,6 @@ export async function sendMessageAction(
       });
     }
 
-    // 6. Save the final assistant message
     const docRef = await db
       .collection(`users/${userId}/sessions/${sessionId}/messages`)
       .add({
@@ -225,8 +223,10 @@ export async function sendMessageAction(
         content: finalResponse,
         timestamp: FieldValue.serverTimestamp(),
       });
-
+    
+    // Revalidate the path to update server-side rendered components like logs and memory
     revalidatePath('/');
+
     return { id: docRef.id, role: 'assistant', content: finalResponse };
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
@@ -247,7 +247,7 @@ export async function sendMessageAction(
     }
     await logStep(userId, sessionId, logData);
 
-    revalidatePath('/');
+    revalidatePath('/'); // Also revalidate on error
     return { id: docRef.id, role: 'assistant', content: errorMessage };
   }
 }
