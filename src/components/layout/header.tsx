@@ -1,7 +1,8 @@
+
 'use client';
 
 import Link from 'next/link';
-import { Gem, LogOut, Plus, Loader2 } from 'lucide-react';
+import { Gem, LogOut, Plus, Loader2, PanelLeft } from 'lucide-react';
 import { useAuth, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -33,7 +34,11 @@ import { createNewConversationAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 
-export function Header() {
+interface HeaderProps {
+  onToggleSidebar?: () => void;
+}
+
+export function Header({ onToggleSidebar }: HeaderProps) {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
   const router = useRouter();
@@ -79,7 +84,18 @@ export function Header() {
   return (
     <header className="sticky top-0 z-10 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 max-w-screen-2xl items-center">
-        <div className="mr-4 flex">
+        <div className="mr-4 flex items-center">
+          {user && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden mr-2"
+              onClick={onToggleSidebar}
+            >
+              <PanelLeft className="h-5 w-5" />
+              <span className="sr-only">Toggle Sidebar</span>
+            </Button>
+          )}
           <Link className="mr-6 flex items-center space-x-2" href="/">
             <Gem className="h-6 w-6 text-primary" />
             <span className="font-bold sm:inline-block font-headline">
