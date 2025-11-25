@@ -10,10 +10,10 @@ export const todoTool = ai.defineTool(
   {
     name: 'todoTool',
     description:
-      'A Firestore-backed to-do list tool. It can add items, list existing items, and mark one or more items as complete. All to-do items are associated with the current user session.',
+      'A Firestore-backed to-do list tool. It can add items, list existing items, mark one or more items as complete, and delete one or more items. All to-do items are associated with the current user session.',
     inputSchema: z.object({
       action: z
-        .enum(['add', 'list', 'complete'])
+        .enum(['add', 'list', 'complete', 'delete'])
         .describe('The action to perform on the to-do list.'),
       text: z
         .string()
@@ -23,7 +23,7 @@ export const todoTool = ai.defineTool(
         .union([z.string(), z.array(z.string())])
         .optional()
         .describe(
-          'The document ID or an array of document IDs of the item(s) to `complete`.'
+          'The document ID or an array of document IDs of the item(s) to `complete` or `delete`.'
         ),
       sessionId: z
         .string()
@@ -93,6 +93,29 @@ export const todoTool = ai.defineTool(
           success: true,
           message: `Successfully completed ${idsToComplete.length} item(s).`,
           completed_ids: idsToComplete,
+        };
+      }
+
+      if (input.action === 'delete') {
+        if (!input.ids)
+          return { error: '`ids` field is required for the `delete` action.' };
+
+        const idsToDelete = Array.isArray(input.ids) ? input.ids : [input.ids];
+        if (idsToDelete.length === 0) {
+          return { error: 'No IDs provided to delete.' };
+        }
+
+        const batch = db.batch();
+        idsToDelete.forEach((id) => {
+          const ref = db.collection(collectionBase).doc(id);
+          batch.delete(ref);
+        });
+
+        await batch.commit();
+        return {
+          success: true,
+          message: `Successfully deleted ${idsToDelete.length} item(s).`,
+          deleted_ids: idsToDelete,
         };
       }
 
