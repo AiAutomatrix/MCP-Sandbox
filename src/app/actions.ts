@@ -181,9 +181,10 @@ export async function sendMessageAction(
             ? JSON.stringify(toolResult, null, 2)
             : toolResult;
         
+        // Carry over the original user message and new reasoning for the next turn
         promptInput = { 
             ...promptInput, 
-            userMessage: '', 
+            userMessage: promptInput.userMessage, // Persist user message
             toolResponse: toolResponseForPrompt,
             previousReasoning: flowOutput.reasoning,
         };
