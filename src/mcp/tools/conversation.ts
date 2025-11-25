@@ -10,12 +10,13 @@ export const conversationReviewTool = ai.defineTool(
   {
     name: 'conversationReviewTool',
     description:
-      'Searches the full transcript of the current conversation to find specific information or review past messages. Use this when the user asks what was said previously or asks you to remember something.',
+      "Searches the conversation transcript. If a 'query' is provided, it finds specific messages. If no 'query' is provided, it returns the entire conversation transcript. Use this when the user asks what was said previously or asks you to remember something.",
     inputSchema: z.object({
       query: z
         .string()
+        .optional()
         .describe(
-          'The search term or question to find in the conversation history.'
+          'The search term to find in the history. If omitted, the full transcript is returned.'
         ),
       userId: z
         .string()
@@ -43,23 +44,31 @@ export const conversationReviewTool = ai.defineTool(
         return { result: 'No conversation history found.' };
       }
 
-      const allMessages = snapshot.docs.map((doc) => doc.data() as { role: string; content: string });
-
-      const matchingMessages = allMessages.filter((msg) =>
-        msg.content.toLowerCase().includes(query.toLowerCase())
+      const allMessages = snapshot.docs.map(
+        (doc) => doc.data() as { role: string; content: string }
       );
-      
-      if (matchingMessages.length === 0) {
+
+      // If there's a query, filter messages. Otherwise, use all messages.
+      const messagesToReturn = query
+        ? allMessages.filter((msg) =>
+            msg.content.toLowerCase().includes(query.toLowerCase())
+          )
+        : allMessages;
+
+      if (messagesToReturn.length === 0) {
         return { result: `No messages found matching the query: "${query}"` };
       }
 
-      // Return a formatted transcript of matching messages
-      const transcript = matchingMessages
-        .map(msg => `${msg.role}: ${msg.content}`)
+      // Return a formatted transcript of the relevant messages
+      const transcript = messagesToReturn
+        .map((msg) => `${msg.role}: ${msg.content}`)
         .join('\n');
-        
-      return { result: `Found matching messages in the transcript:\n${transcript}` };
 
+      const resultHeader = query
+        ? `Found matching messages in the transcript:\n`
+        : `Full conversation transcript:\n`;
+
+      return { result: `${resultHeader}${transcript}` };
     } catch (err: any) {
       return {
         error: `An error occurred while searching the conversation: ${
