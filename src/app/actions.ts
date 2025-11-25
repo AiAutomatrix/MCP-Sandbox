@@ -8,7 +8,7 @@ import {
 } from '@/ai/flows/generate-response';
 import { revalidatePath } from 'next/cache';
 import { initializeFirebase } from '@/firebase/server-init';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { AgentMemoryFact } from '@/lib/types';
 import { TOOL_REGISTRY } from '@/mcp/tools';
 
@@ -139,54 +139,74 @@ export async function sendMessageAction(
       .filter((text) => text);
 
     // 3. Start the agent loop
-    let promptInput: GenerateResponseInput = { userMessage, memory };
+    let promptInput: GenerateResponseInput = {
+      userMessage,
+      memory,
+      userId,
+      sessionId,
+    };
     let finalResponse = '';
     let flowOutput: GenerateResponseOutput | null = null;
     let combinedLogData: any = { userMessage };
 
     for (let i = 0; i < MAX_TOOL_LOOPS; i++) {
       flowOutput = await generateResponse(promptInput);
-      
+
       // Combine reasoning and tool calls into one log object for the step
-      if (flowOutput.reasoning) combinedLogData.reasoning = flowOutput.reasoning;
-      if (flowOutput.toolRequest) combinedLogData.toolCalls = [JSON.stringify(flowOutput.toolRequest)];
-      
+      if (flowOutput.reasoning)
+        combinedLogData.reasoning = flowOutput.reasoning;
+      if (flowOutput.toolRequest)
+        combinedLogData.toolCalls = [
+          JSON.stringify(flowOutput.toolRequest, null, 2),
+        ];
+
       if (flowOutput.newFacts) {
         await saveFacts(userId, sessionId, flowOutput.newFacts);
       }
-      
+
       if (flowOutput.toolRequest) {
         const toolName = flowOutput.toolRequest.name;
         let tool = TOOL_REGISTRY[toolName];
-        
+
         if (!tool) {
           const simpleName = toolName.split('.').pop();
           if (simpleName) {
-              tool = TOOL_REGISTRY[simpleName];
+            tool = TOOL_REGISTRY[simpleName];
           }
         }
-        
+
         if (!tool) {
           throw new Error(`Unknown tool: ${toolName}`);
         }
-        
-        const toolResult = await tool(flowOutput.toolRequest.input ?? {});
 
-        combinedLogData.toolResults = [typeof toolResult === 'object' ? JSON.stringify(toolResult, null, 2) : toolResult];
+        // Always pass userId and sessionId to tools if they don't have them
+        const toolInput = {
+          ...flowOutput.toolRequest.input,
+          userId: flowOutput.toolRequest.input.userId || userId,
+          sessionId: flowOutput.toolRequest.input.sessionId || sessionId,
+        };
+
+        const toolResult = await tool(toolInput ?? {});
+
+        combinedLogData.toolResults = [
+          typeof toolResult === 'object'
+            ? JSON.stringify(toolResult, null, 2)
+            : toolResult,
+        ];
         await logStep(userId, sessionId, combinedLogData);
         combinedLogData = {}; // Clear for next potential loop
-        
+
         const toolResponseForPrompt =
           typeof toolResult === 'object'
             ? JSON.stringify(toolResult, null, 2)
             : toolResult;
-        
+
         // Carry over the original user message and new reasoning for the next turn
-        promptInput = { 
-            ...promptInput, 
-            userMessage: promptInput.userMessage, // Persist user message
-            toolResponse: toolResponseForPrompt,
-            previousReasoning: flowOutput.reasoning,
+        promptInput = {
+          ...promptInput, // This carries over userId and sessionId
+          userMessage: promptInput.userMessage, // Persist user message
+          toolResponse: toolResponseForPrompt,
+          previousReasoning: flowOutput.reasoning,
         };
 
         continue;
@@ -196,13 +216,13 @@ export async function sendMessageAction(
         finalResponse = flowOutput.response;
         combinedLogData.finalResponse = finalResponse;
         await logStep(userId, sessionId, combinedLogData);
-        break; 
+        break;
       }
 
-       // If there's only reasoning without a tool call or final response, log it.
+      // If there's only reasoning without a tool call or final response, log it.
       if (flowOutput.reasoning && !finalResponse) {
-         await logStep(userId, sessionId, combinedLogData);
-         combinedLogData = {}; // Reset for next loop if any
+        await logStep(userId, sessionId, combinedLogData);
+        combinedLogData = {}; // Reset for next loop if any
       }
     }
 
@@ -214,36 +234,34 @@ export async function sendMessageAction(
       finalResponse = "Sorry, I couldn't come up with a response.";
       await logStep(userId, sessionId, {
         userMessage: userMessage,
-        reasoning: 'Agent failed to produce a final response after exhausting tool loops or initial generation.',
+        reasoning:
+          'Agent failed to produce a final response after exhausting tool loops or initial generation.',
         finalResponse: finalResponse,
       });
     }
 
-    await db
-      .collection(`users/${userId}/sessions/${sessionId}/messages`)
-      .add({
-        role: 'assistant',
-        content: finalResponse,
-        timestamp: FieldValue.serverTimestamp(),
-      });
-    
+    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
+      role: 'assistant',
+      content: finalResponse,
+      timestamp: FieldValue.serverTimestamp(),
+    });
+
     // Revalidate the path to update server-side rendered components like logs and memory
     revalidatePath('/');
-    
-
   } catch (error) {
     console.error('Error in sendMessageAction:', error);
-    const errorMessage = 'Sorry, something went wrong while processing your request.';
-    await db
-      .collection(`users/${userId}/sessions/${sessionId}/messages`)
-      .add({
-        role: 'assistant',
-        content: errorMessage,
-        timestamp: FieldValue.serverTimestamp(),
-      });
+    const errorMessage =
+      'Sorry, something went wrong while processing your request.';
+    await db.collection(`users/${userId}/sessions/${sessionId}/messages`).add({
+      role: 'assistant',
+      content: errorMessage,
+      timestamp: FieldValue.serverTimestamp(),
+    });
     const logData: any = {
       finalResponse: errorMessage,
-      reasoning: `Error: ${error instanceof Error ? error.message : String(error)}`,
+      reasoning: `Error: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
       userMessage,
     };
 

@@ -19,7 +19,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { mathEvaluator, todoTool } from '@/mcp/tools';
+import { mathEvaluator, todoTool, conversationReviewTool } from '@/mcp/tools';
 
 // -----------------------------
 // Schemas
@@ -45,6 +45,8 @@ const GenerateResponseInputSchema = z.object({
     .describe(
       'The reasoning from the previous turn, provided when a tool was called.'
     ),
+  userId: z.string().optional().describe('The ID of the current user.'),
+  sessionId: z.string().optional().describe('The ID of the current session.'),
 });
 export type GenerateResponseInput = z.infer<typeof GenerateResponseInputSchema>;
 
@@ -72,7 +74,7 @@ export type GenerateResponseOutput = z.infer<
 
 const generateResponsePrompt = ai.definePrompt({
   name: 'generateResponseWithToolsPrompt',
-  tools: [mathEvaluator, todoTool],
+  tools: [mathEvaluator, todoTool, conversationReviewTool],
   input: { schema: GenerateResponseInputSchema },
   output: { schema: GenerateResponseOutputSchema },
   prompt: `You are a helpful assistant with memory and access to tools.
@@ -80,13 +82,15 @@ const generateResponsePrompt = ai.definePrompt({
 You are given:
 - A list of memory facts (use them if relevant).
 - The user's message.
+- The user's ID (userId) and the current session ID (sessionId), which you MUST pass to any tools that require them (like conversationReviewTool or todoTool).
 - Optionally, the result of a previously-run tool in 'toolResponse'.
 - Optionally, your reasoning from the previous step in 'previousReasoning'.
 
 Your goals:
 1. Answer the user's message directly and conversationally.
-2. If you *need* external actions or data (math, todo operations), request a tool by returning a structured object in 'toolRequest'.
+2. If you need external actions or data (math, todo operations, searching the conversation), request a tool by returning a structured object in 'toolRequest'.
    e.g., { "toolRequest": { "name": "mathEvaluator", "input": { "expression": "2+2" } } }
+   e.g., { "toolRequest": { "name": "conversationReviewTool", "input": { "query": "what I said about tasks", "userId": "{{userId}}", "sessionId": "{{sessionId}}" } } }
 
    If you request a tool, **do not** also provide the final user-facing \`response\`. The runtime will execute the tool and feed the result back to you. After receiving the \`toolResponse\`, you can then formulate the final answer.
 
